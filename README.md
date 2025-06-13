@@ -23,13 +23,8 @@ The end result is visibly crisper and contrasty. Generated PNGs are usually **80
 
 ## 2. Installation  
 **Plain-English steps**  
-1. Put this repo in `extensions/`.  
+1. `git clone` this repo in your WebUI `extensions/` or in **Extensions** tab "Install from URL": `https://github.com/thavocado/sd-webui-frequency-separation`
 2. Restart the WebUI—look for the **“Frequency Separation”** accordion in *txt2img* & *img2img*.
-
-```bash
-git clone https://github.com/yourname/sd-webui-frequency-separation \
-      ~/.stable-diffusion-webui/extensions/frequency-separation
-````
 
 ## 3. Internal Pipeline
 
@@ -58,3 +53,4 @@ git clone https://github.com/yourname/sd-webui-frequency-separation \
 ## 5. Caveats
 
 * Increases generation time by 3x. I recommend using it after you establish a base gen.
+* No ComfyUI nodes (yet).
