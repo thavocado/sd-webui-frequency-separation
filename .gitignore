@@ -1,0 +1,10 @@
+CLAUDE.md
+*.patch
+brightness_notes.txt
+mask_math_exploration.py
+more_mask_functions.py
+transformed_circular_math.py
+validate_extension.py
+test_frequency_separation.py
+clear_cache.bat
+clear_cache.sh

@@ -1,0 +1,8 @@
+# Core dependencies (usually already satisfied by Stable Diffusion WebUI)
+torch>=1.12.0
+numpy>=1.21.0
+opencv-python-headless>=4.5.0
+Pillow>=8.3.0
+
+# Optional dependencies for enhanced functionality
+scipy>=1.7.0
