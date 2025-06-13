@@ -32,7 +32,7 @@ The end result is visibly crisper and contrasty. Generated PNGs are usually **80
 
 | Stage                  | Description  | Details                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **FFT Split**          | Turn picture into a “heat-map of squiggles” and carve out low, mid, high zones line an audio EQ. | 2-D FFT, optional `fftshift`, radial / corner masks, DC preservation.                                   |
+| **FFT Split**          | Turn picture into a “heat-map of squiggles” and carve out low, mid, high zones like an audio EQ. | 2-D FFT, optional `fftshift`, radial / corner masks, DC preservation.                                   |
 | **Per-Band Diffusion** | Each layer runs through SD with its own noise, CFG & steps.                 | Dynamically spawns `StableDiffusionProcessingImg2Img`; inherits prompt/seed; band-specific overrides.   |
 | **Synchronization**    | Prevents ghosting between layers.                                               | Modes: independent, shared-noise, cross-attention, progressive, shared-latent.                          |
 | **Reconstruction**     | Sharpened layers are re-stacked.                                                | Weighted spectrum merge or simple alpha blend → `ifft2`.                                                |
