@@ -1263,6 +1263,9 @@ class FrequencySeparationScript(scripts.Script):
                 # Convert tensor to PIL image
                 decoded = torch.clamp(decoded, -1.0, 1.0)
                 decoded = (decoded + 1.0) / 2.0  # Scale from [-1,1] to [0,1]
+                # Convert BFloat16 to Float32 before numpy conversion if needed
+                if decoded.dtype == torch.bfloat16:
+                    decoded = decoded.float()
                 decoded = decoded.squeeze(0).permute(1, 2, 0).cpu().numpy()
                 decoded = (decoded * 255.0).astype(np.uint8)
                 
@@ -1295,6 +1298,11 @@ class FrequencySeparationScript(scripts.Script):
     def split_latent_frequency_bands(self, latent: torch.Tensor, freq_config: FreqSepConfig, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular") -> Dict[str, torch.Tensor]:
         """Split latent tensor into frequency bands using FFT"""
         try:
+            # Convert BFloat16 to Float32 for FFT operations if needed
+            original_dtype = latent.dtype
+            if latent.dtype == torch.bfloat16:
+                latent = latent.float()
+            
             # Apply FFT to latent channels
             latent_freq = torch.fft.fftn(latent, dim=(-2, -1))
             
@@ -1339,6 +1347,10 @@ class FrequencySeparationScript(scripts.Script):
                     band_freq = torch.fft.ifftshift(band_freq, dim=(-2, -1))
                 
                 band_latent = torch.fft.ifftn(band_freq, dim=(-2, -1)).real
+                
+                # Convert back to original dtype if needed
+                if original_dtype == torch.bfloat16:
+                    band_latent = band_latent.to(original_dtype)
                 
                 frequency_bands[band_config.name] = band_latent
                 
