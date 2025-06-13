@@ -17,6 +17,7 @@ Synchronization modes prevent ghosting and spatial misalignment:
 - Shared latent: Mixed processing with spatial guidance
 """
 
+from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 import math
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
@@ -1201,7 +1202,10 @@ class FrequencySeparationScript(scripts.Script):
                     latent = p.sd_model.first_stage_model.encode(image_tensor)
                 else:
                     raise Exception("No VAE encoder method found")
-                
+
+                if isinstance(latent, DiagonalGaussianDistribution):
+                    latent = latent.parameters
+
                 # Apply scaling factor if present
                 if hasattr(p.sd_model, 'scale_factor'):
                     latent = latent * p.sd_model.scale_factor
