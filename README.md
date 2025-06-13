@@ -77,23 +77,21 @@ The extension offers 12 different mathematical distance functions for creating f
 
 ## 6. Advanced Band Configuration
 
-Control each frequency band's processing independently for fine-tuned results:
+Control each frequency band's processing independently for fine-tuned results.
 
-### Frequency Band Ranges
-| Band | Default Range | Purpose |
-| --- | --- | --- |
-| **Low Frequency** | 0.00 - 0.15 | Structure/Composition |
-| **Mid Frequency** | 0.10 - 0.40 | Main Features |
-| **High Frequency** | 0.35 - 1.00 | Fine Details |
+### Default Band Ranges
+- **Low Frequency**: 0.00 - 0.15 (Structure/Composition)
+- **Mid Frequency**: 0.10 - 0.40 (Main Features)  
+- **High Frequency**: 0.35 - 1.00 (Fine Details)
 
 ### Per-Band Controls
-| Parameter | Low Default | Mid Default | High Default | Description |
-| --- | --- | --- | --- | --- |
-| **Denoising Strength** | 0.3 | 0.6 | 0.8 | How much to denoise each band |
-| **Steps** (optional) | 15 | 20 | 25 | Custom steps per band (when enabled) |
-| **CFG Scale** (optional) | 5.0 | 7.0 | 9.0 | Custom CFG per band (when enabled) |
+- **Denoising Strength**: Controls how much each frequency band is denoised during generation
+  - Low: 0.3 (default)
+  - Mid: 0.6 (default)
+  - High: 0.8 (default)
 
-**Note:** Steps and CFG Scale are only active when "Use custom steps and CFG scale" is checked. Otherwise, the extension uses the main generation settings.
+- **Custom Steps & CFG** (optional): Enable "Use custom steps and CFG scale" to override global settings per band
+  - Otherwise uses the main generation settings
 
 ---
 
