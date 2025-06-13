@@ -1304,7 +1304,7 @@ class FrequencySeparationScript(scripts.Script):
         try:
             # Convert BFloat16 to Float32 for FFT operations if needed
             original_dtype = latent.dtype
-            if latent.dtype == torch.bfloat16:
+            if latent.dtype in (torch.bfloat16, torch.float16):
                 latent = latent.float()
             
             # Apply FFT to latent channels
@@ -1353,7 +1353,7 @@ class FrequencySeparationScript(scripts.Script):
                 band_latent = torch.fft.ifftn(band_freq, dim=(-2, -1)).real
                 
                 # Convert back to original dtype if needed
-                if original_dtype == torch.bfloat16:
+                if original_dtype != band_latent.dtype:
                     band_latent = band_latent.to(original_dtype)
                 
                 frequency_bands[band_config.name] = band_latent
