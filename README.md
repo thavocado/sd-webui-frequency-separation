@@ -31,6 +31,11 @@ The end result is visibly crisper and contrasty. Generated PNGs are usually **80
 1. `git clone` this repo in your WebUI `extensions/` or in **Extensions** tab "Install from URL": `https://github.com/thavocado/sd-webui-frequency-separation`
 2. Restart the WebUI—look for the **“Frequency Separation”** accordion in *txt2img* & *img2img*.
 
+**Tested Compatibility**
+- **Forge**: f2.0.1v1.10.1-previous-665-gae278f79
+- **AUTOMATIC1111**: v1.9.4
+- **reForge**: f1.7.0-v1.10.1RC-latest-2255-g2b54f24a
+
 ## 3. Internal Pipeline
 
 | Stage                  | Description  | Details                                                                                          |
