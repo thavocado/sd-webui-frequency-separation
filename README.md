@@ -52,7 +52,43 @@ The end result is visibly crisper and contrasty. Generated PNGs are usually **80
 
 ---
 
-## 5. Caveats
+## 5. Frequency Mask Functions
+
+The extension offers 12 different mathematical distance functions for creating frequency masks. While experimental options are available for exploration, **corner_average** (default) works best in practice.
+
+| Function | Description |
+| --- | --- |
+| **corner_average** ✅ | Average distance to all corners (default - recommended) |
+| center_circular | Simple radial distance from center |
+| corner_min_diamond | Minimum distance to any corner |
+| corner_rms | Root mean square distance to corners |
+| corner_harmonic | Harmonic mean distance to corners |
+| corner_product | Product of normalized corner distances |
+| transformed_circular | Circular mask with wraparound |
+| manhattan | L1 norm distance |
+| chebyshev | L∞ norm distance |
+| minkowski_1_5 | Minkowski distance with p=1.5 |
+| gravitational | Gravitational potential from corners |
+| wave_interference | Wave interference from corner sources |
+
+**Note:** Most experimental functions are included for research purposes. Stick with corner_average unless you have specific needs.
+
+---
+
+## 6. Advanced Band Configuration
+
+Fine-tune the frequency band boundaries and overlap for specific use cases:
+
+| Parameter | Default | Range | Description |
+| --- | --- | --- | --- |
+| **Low-freq cutoff** | 0.15 | 0.0-1.0 | Upper boundary of low frequencies (composition) |
+| **Mid-freq range** | 0.10-0.40 | 0.0-1.0 | Start and end of mid frequencies (edges/shapes) |
+| **High-freq start** | 0.35 | 0.0-1.0 | Lower boundary of high frequencies (textures) |
+| **Overlap factor** | 0.1 | 0.0-0.5 | Soft transition between bands |
+
+---
+
+## 7. Caveats
 
 * Increases generation time by 3x. I recommend using it after you establish a base gen.
 * No ComfyUI nodes (yet).
