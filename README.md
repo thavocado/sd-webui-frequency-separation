@@ -3,6 +3,9 @@
 
 ![Frequency Separation Comparison](preview/comp.png)
 
+## User Interface
+![UI Preview](preview/ui_v1.0.1.png)
+
 ---
 
 ## 1. Why You’d Want This  
