@@ -77,14 +77,23 @@ The extension offers 12 different mathematical distance functions for creating f
 
 ## 6. Advanced Band Configuration
 
-Fine-tune the frequency band boundaries and overlap for specific use cases:
+Control each frequency band's processing independently for fine-tuned results:
 
-| Parameter | Default | Range | Description |
-| --- | --- | --- | --- |
-| **Low-freq cutoff** | 0.15 | 0.0-1.0 | Upper boundary of low frequencies (composition) |
-| **Mid-freq range** | 0.10-0.40 | 0.0-1.0 | Start and end of mid frequencies (edges/shapes) |
-| **High-freq start** | 0.35 | 0.0-1.0 | Lower boundary of high frequencies (textures) |
-| **Overlap factor** | 0.1 | 0.0-0.5 | Soft transition between bands |
+### Frequency Band Ranges
+| Band | Default Range | Purpose |
+| --- | --- | --- |
+| **Low Frequency** | 0.00 - 0.15 | Structure/Composition |
+| **Mid Frequency** | 0.10 - 0.40 | Main Features |
+| **High Frequency** | 0.35 - 1.00 | Fine Details |
+
+### Per-Band Controls
+| Parameter | Low Default | Mid Default | High Default | Description |
+| --- | --- | --- | --- | --- |
+| **Denoising Strength** | 0.3 | 0.6 | 0.8 | How much to denoise each band |
+| **Steps** (optional) | 15 | 20 | 25 | Custom steps per band (when enabled) |
+| **CFG Scale** (optional) | 5.0 | 7.0 | 9.0 | Custom CFG per band (when enabled) |
+
+**Note:** Steps and CFG Scale are only active when "Use custom steps and CFG scale" is checked. Otherwise, the extension uses the main generation settings.
 
 ---
 
