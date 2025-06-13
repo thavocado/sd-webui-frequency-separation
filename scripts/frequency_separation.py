@@ -1242,11 +1242,15 @@ class FrequencySeparationScript(scripts.Script):
                     latent_for_decode = latent_for_decode / p.sd_model.first_stage_model.scale_factor
                 
                 # Match dtype with VAE model to avoid dtype mismatch errors
-                if hasattr(p.sd_model, 'first_stage_model'):
-                    # Get the dtype from the VAE model's first parameter
-                    vae_dtype = next(p.sd_model.first_stage_model.parameters()).dtype
-                    if latent_for_decode.dtype != vae_dtype:
-                        latent_for_decode = latent_for_decode.to(dtype=vae_dtype)
+                if hasattr(p.sd_model, 'first_stage_model') and p.sd_model.first_stage_model is not None:
+                    try:
+                        # Get the dtype from the VAE model's first parameter
+                        vae_dtype = next(p.sd_model.first_stage_model.parameters()).dtype
+                        if latent_for_decode.dtype != vae_dtype:
+                            latent_for_decode = latent_for_decode.to(dtype=vae_dtype)
+                    except (StopIteration, AttributeError):
+                        # VAE model has no parameters or parameters() method doesn't exist
+                        pass
                 
                 # Decode using VAE
                 if hasattr(p.sd_model, 'decode_first_stage'):
