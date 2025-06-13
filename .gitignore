@@ -1,4 +1,8 @@
 CLAUDE.md
+ENHANCEMENT_FEATURES.md
+EXAMPLES.md
+__pycache__/
+*.pyc
 *.patch
 brightness_notes.txt
 mask_math_exploration.py
