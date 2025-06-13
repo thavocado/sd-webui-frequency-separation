@@ -56,3 +56,4 @@ The end result is visibly crisper and contrasty. Generated PNGs are usually **80
 
 * Increases generation time by 3x. I recommend using it after you establish a base gen.
 * No ComfyUI nodes (yet).
+* Currently test on reForge only. Will work with other flavours of WebUI, but if you run into problems please let me know via https://github.com/thavocado/sd-webui-frequency-separation/issues.
