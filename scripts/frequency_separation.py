@@ -23,6 +23,15 @@ from dataclasses import dataclass
 from enum import Enum
 from copy import deepcopy
 
+# Import version
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+try:
+    from __version__ import __version__
+except ImportError:
+    __version__ = "1.0.1"  # Fallback version
+
 try:
     import torch
     import torch.nn.functional as F
@@ -1231,6 +1240,13 @@ class FrequencySeparationScript(scripts.Script):
                     latent_for_decode = latent_for_decode / p.sd_model.scale_factor
                 elif hasattr(p.sd_model, 'first_stage_model') and hasattr(p.sd_model.first_stage_model, 'scale_factor'):
                     latent_for_decode = latent_for_decode / p.sd_model.first_stage_model.scale_factor
+                
+                # Match dtype with VAE model to avoid dtype mismatch errors
+                if hasattr(p.sd_model, 'first_stage_model'):
+                    # Get the dtype from the VAE model's first parameter
+                    vae_dtype = next(p.sd_model.first_stage_model.parameters()).dtype
+                    if latent_for_decode.dtype != vae_dtype:
+                        latent_for_decode = latent_for_decode.to(dtype=vae_dtype)
                 
                 # Decode using VAE
                 if hasattr(p.sd_model, 'decode_first_stage'):
@@ -2464,7 +2480,7 @@ class FrequencySeparationScript(scripts.Script):
             params["Frequency Separation mask function"] = mask_function
         
         # Add version for future compatibility
-        params["Frequency Separation version"] = "1.0"
+        params["Frequency Separation version"] = __version__
         
         return params
 
