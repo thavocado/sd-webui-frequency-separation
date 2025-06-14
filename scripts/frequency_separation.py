@@ -83,6 +83,7 @@ class FrequencyBandConfig:
     denoising_strength: float
     steps: int
     cfg_scale: float
+    amplitude_scale: float = 1.0  # Amplitude scaling factor for recombination
     preserve_composition: bool = False
 
 
@@ -760,6 +761,10 @@ class FrequencySeparationScript(scripts.Script):
                         low_denoising = gr.Slider(
                             label="Denoising Strength", minimum=0.1, maximum=1.0, value=0.3, step=0.05
                         )
+                        low_amplitude = gr.Slider(
+                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1,
+                        )
+                    with gr.Row():
                         low_steps = gr.Slider(
                             label="Steps", minimum=5, maximum=50, value=15, step=1, interactive=False
                         )
@@ -781,6 +786,10 @@ class FrequencySeparationScript(scripts.Script):
                         mid_denoising = gr.Slider(
                             label="Denoising Strength", minimum=0.1, maximum=1.0, value=0.6, step=0.05
                         )
+                        mid_amplitude = gr.Slider(
+                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1,
+                        )
+                    with gr.Row():
                         mid_steps = gr.Slider(
                             label="Steps", minimum=5, maximum=50, value=20, step=1, interactive=False
                         )
@@ -802,6 +811,10 @@ class FrequencySeparationScript(scripts.Script):
                         high_denoising = gr.Slider(
                             label="Denoising Strength", minimum=0.1, maximum=1.0, value=0.8, step=0.05
                         )
+                        high_amplitude = gr.Slider(
+                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1,
+                        )
+                    with gr.Row():
                         high_steps = gr.Slider(
                             label="Steps", minimum=5, maximum=50, value=25, step=1, interactive=False
                         )
@@ -869,6 +882,7 @@ class FrequencySeparationScript(scripts.Script):
             (low_freq_range_start, "Frequency Separation low freq start"),
             (low_freq_range_end, "Frequency Separation low freq end"),
             (low_denoising, "Frequency Separation low denoising"),
+            (low_amplitude, "Frequency Separation low amplitude"),
             (low_steps, "Frequency Separation low steps"),
             (low_cfg, "Frequency Separation low cfg"),
             
@@ -876,6 +890,7 @@ class FrequencySeparationScript(scripts.Script):
             (mid_freq_range_start, "Frequency Separation mid freq start"),
             (mid_freq_range_end, "Frequency Separation mid freq end"),
             (mid_denoising, "Frequency Separation mid denoising"),
+            (mid_amplitude, "Frequency Separation mid amplitude"),
             (mid_steps, "Frequency Separation mid steps"),
             (mid_cfg, "Frequency Separation mid cfg"),
             
@@ -883,6 +898,7 @@ class FrequencySeparationScript(scripts.Script):
             (high_freq_range_start, "Frequency Separation high freq start"),
             (high_freq_range_end, "Frequency Separation high freq end"),
             (high_denoising, "Frequency Separation high denoising"),
+            (high_amplitude, "Frequency Separation high amplitude"),
             (high_steps, "Frequency Separation high steps"),
             (high_cfg, "Frequency Separation high cfg"),
         ]
@@ -890,17 +906,17 @@ class FrequencySeparationScript(scripts.Script):
         return [
             enabled, sync_mode, num_bands, overlap_factor, spatial_guidance, recombination_method,
             save_before_denoising, use_custom_steps_cfg, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function,
-            low_freq_range_start, low_freq_range_end, low_denoising, low_steps, low_cfg,
-            mid_freq_range_start, mid_freq_range_end, mid_denoising, mid_steps, mid_cfg,
-            high_freq_range_start, high_freq_range_end, high_denoising, high_steps, high_cfg
+            low_freq_range_start, low_freq_range_end, low_denoising, low_amplitude, low_steps, low_cfg,
+            mid_freq_range_start, mid_freq_range_end, mid_denoising, mid_amplitude, mid_steps, mid_cfg,
+            high_freq_range_start, high_freq_range_end, high_denoising, high_amplitude, high_steps, high_cfg
         ]
     
     def process(self, p: StableDiffusionProcessing, enabled: bool, sync_mode: str, num_bands: int,
                overlap_factor: float, spatial_guidance: float, recombination_method: str,
                save_before_denoising: bool, use_custom_steps_cfg: bool, preserve_dc_component_v2: bool, use_fft_shift: bool, use_correct_fft_shift: bool, mask_function: str,
-               low_freq_start: float, low_freq_end: float, low_denoising: float, low_steps: int, low_cfg: float,
-               mid_freq_start: float, mid_freq_end: float, mid_denoising: float, mid_steps: int, mid_cfg: float,
-               high_freq_start: float, high_freq_end: float, high_denoising: float, high_steps: int, high_cfg: float):
+               low_freq_start: float, low_freq_end: float, low_denoising: float, low_amplitude: float, low_steps: int, low_cfg: float,
+               mid_freq_start: float, mid_freq_end: float, mid_denoising: float, mid_amplitude: float, mid_steps: int, mid_cfg: float,
+               high_freq_start: float, high_freq_end: float, high_denoising: float, high_amplitude: float, high_steps: int, high_cfg: float):
         """Main processing method - works on latents, not final images"""
         
         print(f"🔍 RAW ARGS DEBUG: preserve_dc_component_v2={preserve_dc_component_v2}, use_correct_fft_shift={use_correct_fft_shift}, mask_function={mask_function}")
@@ -2291,18 +2307,28 @@ class FrequencySeparationScript(scripts.Script):
                     spectrum_mag = (spectrum_mag / np.max(spectrum_mag) * 255).astype(np.uint8)
                     self._save_debug_image(spectrum_mag, f"image_{band_name}_spectrum.png", None, "IMAGE")
 
-                # ▶️ NEW: weighted accumulation & running mask sum
+                # ▶️ NEW: weighted accumulation & running mask sum with amplitude scaling
+                amplitude_scale = band_config.amplitude_scale
+                print(f"        🎚️ Applying amplitude scale {amplitude_scale:.2f} to {band_name}")
+                
+                # Calculate the actual masked and scaled frequency that will be used
+                masked_scaled_freq = band_freq * mask[..., None] * amplitude_scale
+                
                 if combined_freq is None:
-                    combined_freq = band_freq * mask[..., None]
+                    combined_freq = masked_scaled_freq
                     sum_mask      = mask
                 else:
-                    combined_freq += band_freq * mask[..., None]
+                    combined_freq += masked_scaled_freq
                     sum_mask      += mask
                 
-                # Debug: Save masked spectrum to see the effect of the mask
+                # Debug: Save masked spectrum to see what's actually being accumulated
                 if self.debug_mode:
-                    masked_mag = np.log1p(np.abs(band_freq[:,:,0]))
-                    masked_mag = (masked_mag / masked_mag.max() * 255).astype(np.uint8)
+                    # Show the actual masked and scaled spectrum that's being used
+                    masked_mag = np.log1p(np.abs(masked_scaled_freq[:,:,0]))
+                    if masked_mag.max() > 0:  # Avoid division by zero
+                        masked_mag = (masked_mag / masked_mag.max() * 255).astype(np.uint8)
+                    else:
+                        masked_mag = np.zeros_like(masked_mag, dtype=np.uint8)
                     self._save_debug_image(masked_mag,
                                           f"image_{band_name}_masked_spectrum.png",
                                           None, "IMAGE")
@@ -2371,7 +2397,11 @@ class FrequencySeparationScript(scripts.Script):
                 weight = 0.3  # Feature contribution
                 print(f"      🎯 {band_name} (features): weight {weight:.1f}")
             
-            combined_image += band_array * weight
+            # Apply amplitude scaling
+            amplitude_scale = band_config.amplitude_scale
+            print(f"        🎚️ Applying amplitude scale {amplitude_scale:.2f} to {band_name}")
+            
+            combined_image += band_array * weight * amplitude_scale
             total_weight += weight
         
         # Debug: Check brightness before and after normalization
