@@ -755,7 +755,7 @@ class FrequencySeparationScript(scripts.Script):
                             label="Low Freq Start", minimum=0.0, maximum=1.0, value=0.0, step=0.01
                         )
                         low_freq_range_end = gr.Slider(
-                            label="Low Freq End", minimum=0.0, maximum=1.0, value=0.15, step=0.01
+                            label="Low Freq End", minimum=0.0, maximum=1.0, value=0.45, step=0.01
                         )
                     with gr.Row():
                         low_denoising = gr.Slider(
@@ -777,10 +777,10 @@ class FrequencySeparationScript(scripts.Script):
                     gr.HTML("<h4>🎯 Mid Frequency Band (Main Features)</h4>")
                     with gr.Row():
                         mid_freq_range_start = gr.Slider(
-                            label="Mid Freq Start", minimum=0.0, maximum=1.0, value=0.1, step=0.01
+                            label="Mid Freq Start", minimum=0.0, maximum=1.0, value=0.45, step=0.01
                         )
                         mid_freq_range_end = gr.Slider(
-                            label="Mid Freq End", minimum=0.0, maximum=1.0, value=0.4, step=0.01
+                            label="Mid Freq End", minimum=0.0, maximum=1.0, value=0.75, step=0.01
                         )
                     with gr.Row():
                         mid_denoising = gr.Slider(
@@ -802,7 +802,7 @@ class FrequencySeparationScript(scripts.Script):
                     gr.HTML("<h4>✨ High Frequency Band (Fine Details)</h4>")
                     with gr.Row():
                         high_freq_range_start = gr.Slider(
-                            label="High Freq Start", minimum=0.0, maximum=1.0, value=0.35, step=0.01
+                            label="High Freq Start", minimum=0.0, maximum=1.0, value=0.75, step=0.01
                         )
                         high_freq_range_end = gr.Slider(
                             label="High Freq End", minimum=0.0, maximum=1.0, value=1.0, step=0.01
@@ -2314,15 +2314,18 @@ class FrequencySeparationScript(scripts.Script):
                 amplitude_scale = band_config.amplitude_scale
                 print(f"        🎚️ Applying amplitude scale {amplitude_scale:.2f} to {band_name}")
                 
+                # Calculate the effective mask (mask * amplitude) for proper weighting
+                effective_mask = mask * amplitude_scale
+                
                 # Calculate the actual masked and scaled frequency that will be used
-                masked_scaled_freq = band_freq * mask[..., None] * amplitude_scale
+                masked_scaled_freq = band_freq * effective_mask[..., None]
                 
                 if combined_freq is None:
                     combined_freq = masked_scaled_freq
-                    sum_mask      = mask
+                    sum_mask      = effective_mask
                 else:
                     combined_freq += masked_scaled_freq
-                    sum_mask      += mask
+                    sum_mask      += effective_mask
                 
                 # Debug: Save masked spectrum to see what's actually being accumulated
                 if self.debug_mode:
@@ -2404,8 +2407,10 @@ class FrequencySeparationScript(scripts.Script):
             amplitude_scale = band_config.amplitude_scale
             print(f"        🎚️ Applying amplitude scale {amplitude_scale:.2f} to {band_name}")
             
-            combined_image += band_array * weight * amplitude_scale
-            total_weight += weight
+            # Apply both weight and amplitude scaling
+            effective_weight = weight * amplitude_scale
+            combined_image += band_array * effective_weight
+            total_weight += effective_weight
         
         # Debug: Check brightness before and after normalization
         pre_norm_brightness = np.mean(combined_image)
