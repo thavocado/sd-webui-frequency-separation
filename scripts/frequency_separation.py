@@ -17,6 +17,7 @@ Synchronization modes prevent ghosting and spatial misalignment:
 - Shared latent: Mixed processing with spatial guidance
 """
 
+from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 import math
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
@@ -1243,7 +1244,10 @@ class FrequencySeparationScript(scripts.Script):
                     latent = p.sd_model.first_stage_model.encode(image_tensor)
                 else:
                     raise Exception("No VAE encoder method found")
-                
+
+                if isinstance(latent, DiagonalGaussianDistribution):
+                    latent = latent.parameters
+
                 # Apply scaling factor if present
                 if hasattr(p.sd_model, 'scale_factor'):
                     latent = latent * p.sd_model.scale_factor
@@ -1342,7 +1346,7 @@ class FrequencySeparationScript(scripts.Script):
         try:
             # Convert BFloat16 to Float32 for FFT operations if needed
             original_dtype = latent.dtype
-            if latent.dtype == torch.bfloat16:
+            if latent.dtype in (torch.bfloat16, torch.float16):
                 latent = latent.float()
             
             # Apply FFT to latent channels
@@ -1404,7 +1408,7 @@ class FrequencySeparationScript(scripts.Script):
                 band_latent = torch.fft.ifftn(band_freq, dim=(-2, -1)).real
                 
                 # Convert back to original dtype if needed
-                if original_dtype == torch.bfloat16:
+                if original_dtype != band_latent.dtype:
                     band_latent = band_latent.to(original_dtype)
                 
                 # Debug: Save masked spectrum and resulting band
