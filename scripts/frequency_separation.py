@@ -548,6 +548,48 @@ class FrequencySeparationScript(scripts.Script):
         # Set priority to run before ADetailer
         # Lower numbers run first. ADetailer typically doesn't set priority (defaults to 0)
         self.priority = -10
+        
+        # Debug configuration
+        self.debug_mode = True  # Set to True to enable debug outputs
+        self.debug_folder = None
+    
+    def _setup_debug_folder(self, p):
+        """Create debug folder if debug mode is enabled"""
+        if self.debug_mode and self.debug_folder is None:
+            import datetime
+            import os
+            from modules.shared import opts
+            
+            # Determine if we're in txt2img or img2img mode
+            if p is not None:
+                # Check the class type to determine original mode, not just presence of init_images
+                is_img2img = 'Img2Img' in type(p).__name__
+                print(f"  🐛 Debug: Processing type is {type(p).__name__}, is_img2img={is_img2img}")
+                mode = "img2img" if is_img2img else "txt2img"
+                
+                # Get the appropriate output directory
+                if is_img2img:
+                    base_dir = opts.outdir_img2img_samples or "outputs/img2img-images"
+                else:
+                    base_dir = opts.outdir_txt2img_samples or "outputs/txt2img-images"
+            else:
+                # Fallback if no processing object available
+                base_dir = "outputs"
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.debug_folder = os.path.join(base_dir, f"frequency_separation_debug_{timestamp}")
+            os.makedirs(self.debug_folder, exist_ok=True)
+            print(f"🐛 Debug mode enabled - saving debug images to {self.debug_folder}/")
+    
+    def _save_debug_image(self, image_array, filename, p, stage=""):
+        """Save debug image if debug mode is enabled"""
+        if not self.debug_mode:
+            return
+        
+        self._setup_debug_folder(p)
+        filepath = os.path.join(self.debug_folder, filename)
+        Image.fromarray(image_array).save(filepath)
+        print(f"  💾 [{stage}] Saved debug image: {filename}")
     
     def title(self):
         return "Frequency Separation Enhancement"
@@ -1068,7 +1110,7 @@ class FrequencySeparationScript(scripts.Script):
             
             # 2. Split latent into frequency bands using FFT
             print(f"  🌊 Step 2: Splitting into frequency bands...")
-            frequency_bands = self.split_latent_frequency_bands(init_latent, freq_config, preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function)
+            frequency_bands = self.split_latent_frequency_bands(init_latent, freq_config, preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function, p)
             print(f"     ✅ Split into {len(frequency_bands)} frequency bands")
             
             # 3. Process each frequency band with ACTUAL DIFFUSION
@@ -1295,7 +1337,7 @@ class FrequencySeparationScript(scripts.Script):
                 print(f"⚠️ Error creating fallback image: {e2}")
                 return Image.new('RGB', (512, 512), color='black')
     
-    def split_latent_frequency_bands(self, latent: torch.Tensor, freq_config: FreqSepConfig, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular") -> Dict[str, torch.Tensor]:
+    def split_latent_frequency_bands(self, latent: torch.Tensor, freq_config: FreqSepConfig, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", p=None) -> Dict[str, torch.Tensor]:
         """Split latent tensor into frequency bands using FFT"""
         try:
             # Convert BFloat16 to Float32 for FFT operations if needed
@@ -1338,6 +1380,19 @@ class FrequencySeparationScript(scripts.Script):
                 )
                 mask = mask.to(latent.device)
                 
+                # Debug: Save latent mask and spectrum
+                if self.debug_mode:
+                    print(f"  🔍 LATENT {band_config.name} mask stats: min={torch.min(mask):.3f}, max={torch.max(mask):.3f}, mean={torch.mean(mask):.3f}")
+                    
+                    # Save latent mask as image
+                    mask_img = (mask.cpu().numpy() * 255).astype(np.uint8)
+                    self._save_debug_image(mask_img, f"latent_{band_config.name}_mask.png", p, "LATENT")
+                    
+                    # Save latent spectrum magnitude for debugging
+                    latent_spectrum_mag = torch.log(1 + torch.abs(latent_freq[0, 0]))  # First batch, first channel
+                    latent_spectrum_mag = (latent_spectrum_mag / torch.max(latent_spectrum_mag) * 255).cpu().numpy().astype(np.uint8)
+                    self._save_debug_image(latent_spectrum_mag, f"latent_{band_config.name}_input_spectrum.png", p, "LATENT")
+                
                 # Apply mask to get frequency band
                 band_freq = latent_freq * mask.unsqueeze(0).unsqueeze(0)
                 
@@ -1351,6 +1406,12 @@ class FrequencySeparationScript(scripts.Script):
                 # Convert back to original dtype if needed
                 if original_dtype == torch.bfloat16:
                     band_latent = band_latent.to(original_dtype)
+                
+                # Debug: Save masked spectrum and resulting band
+                if self.debug_mode:
+                    masked_spectrum_mag = torch.log(1 + torch.abs(band_freq[0, 0]))
+                    masked_spectrum_mag = (masked_spectrum_mag / torch.max(masked_spectrum_mag) * 255).cpu().numpy().astype(np.uint8)
+                    self._save_debug_image(masked_spectrum_mag, f"latent_{band_config.name}_masked_spectrum.png", p, "LATENT")
                 
                 frequency_bands[band_config.name] = band_latent
                 
@@ -1421,7 +1482,7 @@ class FrequencySeparationScript(scripts.Script):
             freq_distances = torch.mean(torch.stack(corners), dim=0)
             max_freq = math.sqrt(h**2 + w**2)
             freq_magnitude = freq_distances / max_freq
-            
+
         elif mask_function == "corner_rms":
             # RMS (Root Mean Square) distance to all corners
             print(f"    📐 Using CORNER RMS distance calculation")
@@ -1474,7 +1535,7 @@ class FrequencySeparationScript(scripts.Script):
             dx = torch.minimum(torch.abs(x - center_w), w - torch.abs(x - center_w))
             
             # Euclidean distance with wraparound
-            max_freq = math.sqrt((h//2)**2 + (w//2)**2)
+            max_freq = math.sqrt((h/2)**2 + (w/2)**2)
             freq_magnitude = torch.sqrt(dx**2 + dy**2) / max_freq
             
         elif mask_function == "manhattan":
@@ -1557,6 +1618,17 @@ class FrequencySeparationScript(scripts.Script):
             max_freq = math.sqrt(center_h**2 + center_w**2)
             freq_magnitude = torch.sqrt(x_centered**2 + y_centered**2) / max_freq
         
+        # universal 0-to-1 scaling
+        freq_magnitude = freq_magnitude - freq_magnitude.min()        # shift so min = 0
+        range_val = freq_magnitude.max()
+        if range_val > 1e-8:                                          # avoid /0
+            freq_magnitude /= range_val
+        else:
+            if hasattr(freq_magnitude, 'zero_'):  # torch
+                freq_magnitude.zero_()
+            else:  # numpy
+                freq_magnitude.fill(0)
+
         low_freq, high_freq = freq_range
         
         # Create soft mask with smooth transitions
@@ -2192,6 +2264,19 @@ class FrequencySeparationScript(scripts.Script):
                     freq_config.overlap_factor,
                     mask_function
                 )                            # (H,W) real
+                
+                # Debug: Save mask and spectrum images
+                if self.debug_mode:
+                    print(f"      🔍 {band_name} mask stats: min={np.min(mask):.3f}, max={np.max(mask):.3f}, mean={np.mean(mask):.3f}")
+                    
+                    # Save mask as image for debugging
+                    mask_img = (mask * 255).astype(np.uint8)
+                    self._save_debug_image(mask_img, f"image_{band_name}_mask.png", None, "IMAGE")
+                    
+                    # Save spectrum magnitude for debugging
+                    spectrum_mag = np.log(1 + np.abs(band_freq[:,:,0]))  # Log scale for visibility
+                    spectrum_mag = (spectrum_mag / np.max(spectrum_mag) * 255).astype(np.uint8)
+                    self._save_debug_image(spectrum_mag, f"image_{band_name}_spectrum.png", None, "IMAGE")
 
                 # ▶️ NEW: weighted accumulation & running mask sum
                 if combined_freq is None:
