@@ -550,7 +550,7 @@ class FrequencySeparationScript(scripts.Script):
         self.priority = -10
         
         # Debug configuration
-        self.debug_mode = True  # Set to True to enable debug outputs
+        self.debug_mode = False  # Set to True to enable debug outputs
         self.debug_folder = None
     
     def _setup_debug_folder(self, p):
@@ -2208,6 +2208,15 @@ class FrequencySeparationScript(scripts.Script):
             max_freq = np.sqrt(center_h**2 + center_w**2)
             freq_magnitude = np.sqrt(x_centered**2 + y_centered**2) / max_freq
         
+        # --- make magnitude span 0-1, whatever the distance function -------------
+        freq_magnitude = freq_magnitude - freq_magnitude.min()
+        range_val = freq_magnitude.max()
+        if range_val > 1e-8:
+            freq_magnitude /= range_val
+        else:                                   # completely flat – shouldn't happen
+            freq_magnitude.fill(0.0)
+        # -------------------------------------------------------------------------
+        
         low_freq, high_freq = freq_range
         
         # Create soft mask with smooth transitions
@@ -2285,6 +2294,14 @@ class FrequencySeparationScript(scripts.Script):
                 else:
                     combined_freq += band_freq * mask[..., None]
                     sum_mask      += mask
+                
+                # Debug: Save masked spectrum to see the effect of the mask
+                if self.debug_mode:
+                    masked_mag = np.log1p(np.abs(band_freq[:,:,0]))
+                    masked_mag = (masked_mag / masked_mag.max() * 255).astype(np.uint8)
+                    self._save_debug_image(masked_mag,
+                                          f"image_{band_name}_masked_spectrum.png",
+                                          None, "IMAGE")
             
             combined_freq = np.where(sum_mask[..., None] > 0,
                                     combined_freq / sum_mask[..., None],
