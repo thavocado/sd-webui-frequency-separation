@@ -762,7 +762,7 @@ class FrequencySeparationScript(scripts.Script):
                             label="Denoising Strength", minimum=0.1, maximum=1.0, value=0.3, step=0.05
                         )
                         low_amplitude = gr.Slider(
-                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1,
+                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1
                         )
                     with gr.Row():
                         low_steps = gr.Slider(
@@ -787,7 +787,7 @@ class FrequencySeparationScript(scripts.Script):
                             label="Denoising Strength", minimum=0.1, maximum=1.0, value=0.6, step=0.05
                         )
                         mid_amplitude = gr.Slider(
-                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1,
+                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1
                         )
                     with gr.Row():
                         mid_steps = gr.Slider(
@@ -812,7 +812,7 @@ class FrequencySeparationScript(scripts.Script):
                             label="Denoising Strength", minimum=0.1, maximum=1.0, value=0.8, step=0.05
                         )
                         high_amplitude = gr.Slider(
-                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1,
+                            label="Amplitude Scale", minimum=0.0, maximum=3.0, value=1.0, step=0.1
                         )
                     with gr.Row():
                         high_steps = gr.Slider(
@@ -936,6 +936,7 @@ class FrequencySeparationScript(scripts.Script):
                 denoising_strength=low_denoising,
                 steps=low_steps if use_custom_steps_cfg else p.steps,
                 cfg_scale=low_cfg if use_custom_steps_cfg else p.cfg_scale,
+                amplitude_scale=low_amplitude,
                 preserve_composition=True
             ),
             FrequencyBandConfig(
@@ -943,14 +944,16 @@ class FrequencySeparationScript(scripts.Script):
                 frequency_range=(mid_freq_start, mid_freq_end),
                 denoising_strength=mid_denoising,
                 steps=mid_steps if use_custom_steps_cfg else p.steps,
-                cfg_scale=mid_cfg if use_custom_steps_cfg else p.cfg_scale
+                cfg_scale=mid_cfg if use_custom_steps_cfg else p.cfg_scale,
+                amplitude_scale=mid_amplitude
             ),
             FrequencyBandConfig(
                 name="high_freq",
                 frequency_range=(high_freq_start, high_freq_end),
                 denoising_strength=high_denoising,
                 steps=high_steps if use_custom_steps_cfg else p.steps,
-                cfg_scale=high_cfg if use_custom_steps_cfg else p.cfg_scale
+                cfg_scale=high_cfg if use_custom_steps_cfg else p.cfg_scale,
+                amplitude_scale=high_amplitude
             )
         ]
         
@@ -2604,6 +2607,7 @@ class FrequencySeparationScript(scripts.Script):
                 params[f"Frequency Separation {band_name} freq start"] = band_config.frequency_range[0]
                 params[f"Frequency Separation {band_name} freq end"] = band_config.frequency_range[1]
                 params[f"Frequency Separation {band_name} denoising"] = band_config.denoising_strength
+                params[f"Frequency Separation {band_name} amplitude"] = band_config.amplitude_scale
                 params[f"Frequency Separation {band_name} steps"] = band_config.steps
                 params[f"Frequency Separation {band_name} cfg"] = band_config.cfg_scale
         
