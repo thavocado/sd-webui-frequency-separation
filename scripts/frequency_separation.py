@@ -551,7 +551,7 @@ class FrequencySeparationScript(scripts.Script):
         self.priority = -10
         
         # Debug configuration
-        self.debug_mode = False  # Set to True to enable debug outputs
+        self.debug_mode = True  # Set to True to enable debug outputs
         self.debug_folder = None
     
     def _setup_debug_folder(self, p):
@@ -751,10 +751,10 @@ class FrequencySeparationScript(scripts.Script):
                     gr.HTML("<h4>🏗️ Low Frequency Band (Structure/Composition)</h4>")
                     with gr.Row():
                         low_freq_range_start = gr.Slider(
-                            label="Low Freq Start", minimum=0.0, maximum=0.5, value=0.0, step=0.01
+                            label="Low Freq Start", minimum=0.0, maximum=1.0, value=0.0, step=0.01
                         )
                         low_freq_range_end = gr.Slider(
-                            label="Low Freq End", minimum=0.05, maximum=0.5, value=0.15, step=0.01
+                            label="Low Freq End", minimum=0.0, maximum=1.0, value=0.15, step=0.01
                         )
                     with gr.Row():
                         low_denoising = gr.Slider(
@@ -772,10 +772,10 @@ class FrequencySeparationScript(scripts.Script):
                     gr.HTML("<h4>🎯 Mid Frequency Band (Main Features)</h4>")
                     with gr.Row():
                         mid_freq_range_start = gr.Slider(
-                            label="Mid Freq Start", minimum=0.05, maximum=0.5, value=0.1, step=0.01
+                            label="Mid Freq Start", minimum=0.0, maximum=1.0, value=0.1, step=0.01
                         )
                         mid_freq_range_end = gr.Slider(
-                            label="Mid Freq End", minimum=0.1, maximum=0.8, value=0.4, step=0.01
+                            label="Mid Freq End", minimum=0.0, maximum=1.0, value=0.4, step=0.01
                         )
                     with gr.Row():
                         mid_denoising = gr.Slider(
@@ -793,10 +793,10 @@ class FrequencySeparationScript(scripts.Script):
                     gr.HTML("<h4>✨ High Frequency Band (Fine Details)</h4>")
                     with gr.Row():
                         high_freq_range_start = gr.Slider(
-                            label="High Freq Start", minimum=0.2, maximum=0.8, value=0.35, step=0.01
+                            label="High Freq Start", minimum=0.0, maximum=1.0, value=0.35, step=0.01
                         )
                         high_freq_range_end = gr.Slider(
-                            label="High Freq End", minimum=0.5, maximum=1.0, value=1.0, step=0.01
+                            label="High Freq End", minimum=0.0, maximum=1.0, value=1.0, step=0.01
                         )
                     with gr.Row():
                         high_denoising = gr.Slider(
