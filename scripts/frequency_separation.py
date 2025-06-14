@@ -17,7 +17,6 @@ Synchronization modes prevent ghosting and spatial misalignment:
 - Shared latent: Mixed processing with spatial guidance
 """
 
-from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 import math
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
@@ -46,6 +45,19 @@ try:
     import modules.shared as shared
     from modules.processing import StableDiffusionProcessing, StableDiffusionProcessingImg2Img
     from modules import devices, sd_models
+    
+    # Try to import DiagonalGaussianDistribution with fallbacks for different webui versions
+    DiagonalGaussianDistribution = None
+    try:
+        from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
+    except ImportError:
+        try:
+            from sgm.modules.distributions import DiagonalGaussianDistribution
+        except ImportError:
+            try:
+                from modules.distributions import DiagonalGaussianDistribution
+            except ImportError:
+                pass
     
     # Optional imports
     try:
@@ -1264,7 +1276,11 @@ class FrequencySeparationScript(scripts.Script):
                 else:
                     raise Exception("No VAE encoder method found")
 
-                if isinstance(latent, DiagonalGaussianDistribution):
+                # Handle DiagonalGaussianDistribution if available
+                if DiagonalGaussianDistribution is not None and isinstance(latent, DiagonalGaussianDistribution):
+                    latent = latent.parameters
+                elif hasattr(latent, 'parameters'):
+                    # Fallback for objects that might have parameters attribute
                     latent = latent.parameters
 
                 # Apply scaling factor if present
@@ -1659,8 +1675,12 @@ class FrequencySeparationScript(scripts.Script):
         transition_width = overlap_factor
         
         # Smooth transitions using sigmoid
-        lower_transition = (freq_magnitude - low_freq) / transition_width
-        lower_mask = torch.sigmoid(lower_transition * 10)
+        if low_freq == 0.0:
+            # everything inside the band is kept exactly
+            lower_mask = torch.ones_like(freq_magnitude)
+        else:
+            lower_transition = (freq_magnitude - low_freq) / transition_width
+            lower_mask = 1.0 - torch.sigmoid(lower_transition * 10)  # high (=1) inside, falls off outside
         
         upper_transition = (high_freq - freq_magnitude) / transition_width  
         upper_mask = torch.sigmoid(upper_transition * 10)
@@ -2246,8 +2266,12 @@ class FrequencySeparationScript(scripts.Script):
         transition_width = overlap_factor
         
         # Smooth transitions using sigmoid-like function
-        lower_transition = (freq_magnitude - low_freq) / transition_width
-        lower_mask = 1.0 / (1.0 + np.exp(-lower_transition * 10))
+        if low_freq == 0.0:
+            # everything inside the band is kept exactly
+            lower_mask = np.ones_like(freq_magnitude)
+        else:
+            lower_transition = (freq_magnitude - low_freq) / transition_width
+            lower_mask = 1.0 - 1.0 / (1.0 + np.exp(-lower_transition * 10))  # high (=1) inside, falls off outside
         
         upper_transition = (high_freq - freq_magnitude) / transition_width  
         upper_mask = 1.0 / (1.0 + np.exp(-upper_transition * 10))
