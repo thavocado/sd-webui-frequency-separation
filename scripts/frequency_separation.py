@@ -1676,11 +1676,11 @@ class FrequencySeparationScript(scripts.Script):
         
         # Smooth transitions using sigmoid
         if low_freq == 0.0:
-            # everything inside the band is kept exactly
+            # lowest band: keep everything inside
             lower_mask = torch.ones_like(freq_magnitude)
         else:
             lower_transition = (freq_magnitude - low_freq) / transition_width
-            lower_mask = 1.0 - torch.sigmoid(lower_transition * 10)  # high (=1) inside, falls off outside
+            lower_mask = torch.sigmoid(lower_transition * 10)   # ← original sign
         
         upper_transition = (high_freq - freq_magnitude) / transition_width  
         upper_mask = torch.sigmoid(upper_transition * 10)
@@ -2267,11 +2267,11 @@ class FrequencySeparationScript(scripts.Script):
         
         # Smooth transitions using sigmoid-like function
         if low_freq == 0.0:
-            # everything inside the band is kept exactly
+            # lowest band: keep everything inside
             lower_mask = np.ones_like(freq_magnitude)
         else:
             lower_transition = (freq_magnitude - low_freq) / transition_width
-            lower_mask = 1.0 - 1.0 / (1.0 + np.exp(-lower_transition * 10))  # high (=1) inside, falls off outside
+            lower_mask = 1.0 / (1.0 + np.exp(-lower_transition * 10))   # ← original sign
         
         upper_transition = (high_freq - freq_magnitude) / transition_width  
         upper_mask = 1.0 / (1.0 + np.exp(-upper_transition * 10))
