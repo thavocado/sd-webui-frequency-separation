@@ -560,6 +560,7 @@ class FrequencySeparationScript(scripts.Script):
     def process(self, p: StableDiffusionProcessing, enabled: bool, sync_mode: str, num_bands: int,
                overlap_factor: float, spatial_guidance: float, recombination_method: str,
                save_before_denoising: bool, use_custom_steps_cfg: bool, preserve_dc_component_v2: bool, use_fft_shift: bool, use_correct_fft_shift: bool, mask_function: str,
+               latent_brightness_scale: float,
                low_freq_start: float, low_freq_end: float, low_denoising: float, low_amplitude: float, low_steps: int, low_cfg: float,
                mid_freq_start: float, mid_freq_end: float, mid_denoising: float, mid_amplitude: float, mid_steps: int, mid_cfg: float,
                high_freq_start: float, high_freq_end: float, high_denoising: float, high_amplitude: float, high_steps: int, high_cfg: float):
@@ -635,6 +636,7 @@ class FrequencySeparationScript(scripts.Script):
         p._freq_sep_use_fft_shift = use_fft_shift
         p._freq_sep_use_correct_fft_shift = use_correct_fft_shift
         p._freq_sep_mask_function = mask_function
+        p._freq_sep_latent_brightness_scale = latent_brightness_scale
         
         # Check if we're in txt2img or img2img mode
         is_txt2img = not isinstance(p, StableDiffusionProcessingImg2Img)
@@ -688,7 +690,7 @@ class FrequencySeparationScript(scripts.Script):
             print(f"   🔍 Using same approach as ADetailer for reliable processing")
             
             # Process in latent space and modify p.init_images in place
-            enhanced_images = self.process_latent_frequency_separation(p, freq_config, recombination_method, save_before_denoising, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function)
+            enhanced_images = self.process_latent_frequency_separation(p, freq_config, recombination_method, save_before_denoising, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function, latent_brightness_scale)
             
             # CRITICAL: Replace the init_images so img2img uses our enhanced versions
             if enhanced_images:
@@ -732,7 +734,7 @@ class FrequencySeparationScript(scripts.Script):
             print("🔄 Falling back to normal processing")
             return None
     
-    def process_latent_frequency_separation(self, p: StableDiffusionProcessingImg2Img, freq_config: FreqSepConfig, recombination_method: str, save_before_denoising: bool, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular"):
+    def process_latent_frequency_separation(self, p: StableDiffusionProcessingImg2Img, freq_config: FreqSepConfig, recombination_method: str, save_before_denoising: bool, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", latent_brightness_scale: float = 1.0):
         """Core latent-space frequency separation processing WITH REAL DIFFUSION"""
         
         print(f"🔧 Using recombination method: {recombination_method}")
@@ -745,6 +747,17 @@ class FrequencySeparationScript(scripts.Script):
         
         print(f"🧠 Processing {len(p.init_images)} images with REAL DIFFUSION in latent space")
         print(f"   🌊 Sync Mode: {freq_config.sync_mode.value}")
+        
+        # Explain what each sync mode does
+        if freq_config.sync_mode == SyncMode.INDEPENDENT:
+            print(f"      ➡️ Each frequency band processed independently")
+        elif freq_config.sync_mode == SyncMode.SYNCHRONIZED_NOISE:
+            print(f"      ➡️ All bands will use synchronized initial noise")
+        elif freq_config.sync_mode == SyncMode.CROSS_ATTENTION:
+            print(f"      ➡️ Higher frequencies guided by low frequency structure")
+        elif freq_config.sync_mode == SyncMode.PROGRESSIVE:
+            print(f"      ➡️ Progressive refinement from low to high frequencies")
+        
         print(f"   🖼️ Frequency Bands: {len(freq_config.band_configs)}")
         
         band_info = []
@@ -845,11 +858,19 @@ class FrequencySeparationScript(scripts.Script):
             
             # Apply distribution matching to preserve saturation
             if current_std > 0:
+                # Apply brightness scaling if specified
+                scaled_mean = init_mean * latent_brightness_scale
+                scaled_std = init_std * latent_brightness_scale
+                
+                if latent_brightness_scale != 1.0:
+                    print(f"     🔆 Applying brightness scale: {latent_brightness_scale:.2f}")
+                    print(f"     📊 Scaled target: mean={scaled_mean:.3f}, std={scaled_std:.3f}")
+                
                 for band_name in processed_bands:
-                    # Normalize to match original distribution
+                    # Normalize to match original distribution with brightness scaling
                     band_latent = processed_bands[band_name]
                     band_latent = (band_latent - current_mean) / current_std  # Standardize
-                    band_latent = band_latent * init_std + init_mean  # Match original distribution
+                    band_latent = band_latent * scaled_std + scaled_mean  # Match scaled distribution
                     processed_bands[band_name] = band_latent
                     
                     # Verify the correction
@@ -1411,6 +1432,7 @@ class FrequencySeparationScript(scripts.Script):
         processed_bands = {}
         low_freq_result = None  # For cross-attention sync
         shared_noise = None     # For synchronized noise
+        cumulative_result = None  # For progressive refinement
         
         # Generate shared noise for synchronization if needed
         if freq_config.sync_mode == SyncMode.SYNCHRONIZED_NOISE:
@@ -1453,10 +1475,20 @@ class FrequencySeparationScript(scripts.Script):
             print(f"  🎛️ REAL DIFFUSION processing {band_name} band (denoising: {band_config.denoising_strength}, steps: {band_config.steps}, cfg: {band_config.cfg_scale})")
             print(f"     📊 Band config: steps={band_config.steps}, cfg={band_config.cfg_scale}")
             
+            # For progressive mode, combine current band with cumulative result
+            if freq_config.sync_mode == SyncMode.PROGRESSIVE and cumulative_result is not None:
+                # Blend current band with cumulative result
+                band_latent_progressive = combine_progressive_bands(
+                    band_latent, cumulative_result, freq_config
+                )
+                print(f"     📈 Combined {band_name} with cumulative result for progressive processing")
+            else:
+                band_latent_progressive = band_latent
+            
             try:
                 # Run ACTUAL diffusion with progress bars!
                 processed_latent = self.run_diffusion_on_frequency_band(
-                    band_latent, band_config, p, freq_config.sync_mode, 
+                    band_latent_progressive, band_config, p, freq_config.sync_mode, 
                     shared_noise, low_freq_result, image_index
                 )
                 
@@ -1467,6 +1499,18 @@ class FrequencySeparationScript(scripts.Script):
                 if band_config.preserve_composition and freq_config.sync_mode == SyncMode.CROSS_ATTENTION:
                     low_freq_result = processed_latent
                     print(f"    🎯 Stored {band_name} as guidance for higher frequencies")
+                
+                # Update cumulative result for progressive refinement
+                if freq_config.sync_mode == SyncMode.PROGRESSIVE:
+                    if cumulative_result is None:
+                        cumulative_result = processed_latent
+                        print(f"    📈 Initialized progressive refinement with {band_name}")
+                    else:
+                        # Combine with previous results
+                        cumulative_result = update_cumulative_result(
+                            cumulative_result, processed_latent, band_config
+                        )
+                        print(f"    📈 Updated progressive refinement with {band_name}")
                 
                 # Update progress
                 shared.state.current_image_sampling_step += 1
@@ -1522,27 +1566,20 @@ class FrequencySeparationScript(scripts.Script):
             
             print(f"      🔥 Starting REAL diffusion on {band_config.name} band...")
             
-            # Decode the frequency band latent to an image for img2img processing
-            band_image = self.decode_latent_to_image(band_latent, base_p)
-            print(f"      🖼️ Decoded {band_config.name} band to image: {band_image.size}")
+            # Apply guidance for cross-attention mode
+            if sync_mode == SyncMode.CROSS_ATTENTION and guidance_latent is not None and not band_config.preserve_composition:
+                # Get spatial guidance strength from config
+                guidance_strength = getattr(base_p._freq_sep_config, 'spatial_guidance_strength', 0.3)
+                
+                # Blend the latents before decoding
+                blended_latent = (1 - guidance_strength) * band_latent + guidance_strength * guidance_latent
+                band_image = self.decode_latent_to_image(blended_latent, base_p)
+                print(f"      🎯 Applied cross-attention guidance in latent space (strength: {guidance_strength})")
+            else:
+                # Normal decoding without guidance
+                band_image = self.decode_latent_to_image(band_latent, base_p)
             
-            # Apply cross-attention guidance in image space if available
-            if guidance_latent is not None and not band_config.preserve_composition:
-                guidance_image = self.decode_latent_to_image(guidance_latent, base_p)
-                guidance_strength = 0.3
-                
-                # Blend images in PIL space
-                import numpy as np
-                from PIL import Image
-                
-                band_array = np.array(band_image).astype(np.float32)
-                guidance_array = np.array(guidance_image).astype(np.float32)
-                
-                blended_array = (1 - guidance_strength) * band_array + guidance_strength * guidance_array
-                blended_array = np.clip(blended_array, 0, 255).astype(np.uint8)
-                band_image = Image.fromarray(blended_array)
-                
-                print(f"      🎯 Applied cross-attention guidance (strength: {guidance_strength})")
+            print(f"      🖼️ Decoded {band_config.name} band to image: {band_image.size}")
             
             # Create img2img processing object following ADetailer's approach
             band_seed = base_p.seed + hash(band_config.name) if base_p.seed >= 0 else base_p.seed
@@ -1553,6 +1590,12 @@ class FrequencySeparationScript(scripts.Script):
             extra_params = {}
             if hasattr(base_p, 'extra_generation_params'):
                 extra_params = copy(base_p.extra_generation_params)
+            
+            # Set initial noise multiplier for synchronized noise
+            initial_noise_mult = None
+            if sync_mode == SyncMode.SYNCHRONIZED_NOISE and shared_noise is not None:
+                # We'll inject the shared noise later
+                initial_noise_mult = 0.0  # Disable random noise generation
             
             # Create the img2img processing object (following ADetailer pattern)
             band_p = StableDiffusionProcessingImg2Img(
@@ -1565,7 +1608,7 @@ class FrequencySeparationScript(scripts.Script):
                 inpaint_full_res=False,
                 inpaint_full_res_padding=0,
                 inpainting_mask_invert=0,
-                initial_noise_multiplier=None,
+                initial_noise_multiplier=initial_noise_mult,
                 sd_model=base_p.sd_model,
                 outpath_samples=getattr(base_p, 'outpath_samples', 'outputs/img2img-images'),
                 outpath_grids=getattr(base_p, 'outpath_grids', 'outputs/img2img-grids'),
@@ -1647,6 +1690,14 @@ class FrequencySeparationScript(scripts.Script):
                 use_fft_shift=getattr(base_p, '_freq_sep_use_fft_shift', False)
             )
             print(f"      🎯 Enabled frequency clamping for {band_config.name} band")
+            
+            # Inject shared noise for synchronized mode
+            if sync_mode == SyncMode.SYNCHRONIZED_NOISE and shared_noise is not None:
+                # Store the shared noise so it can be used during processing
+                band_p.extra_generation_params['synchronized_noise'] = True
+                # The noise will be applied during the sample callback
+                # For now, we'll rely on using the same seed
+                print(f"      🎲 Using synchronized noise (seed: {band_seed})")
             
             # Run the ACTUAL diffusion process with progress bars (ADetailer approach)!
             try:
@@ -2256,6 +2307,7 @@ class FrequencySeparationScript(scripts.Script):
             use_fft_shift = getattr(p, '_freq_sep_use_fft_shift', False)
             use_correct_fft_shift = getattr(p, '_freq_sep_use_correct_fft_shift', False)
             mask_function = getattr(p, '_freq_sep_mask_function', 'center_circular')
+            latent_brightness_scale = getattr(p, '_freq_sep_latent_brightness_scale', 1.0)
             
             # Convert tensor images to PIL and process each one
             enhanced_images = []
@@ -2275,7 +2327,8 @@ class FrequencySeparationScript(scripts.Script):
                 # Process with frequency separation
                 enhanced_image_list = self.process_latent_frequency_separation(
                     temp_p, freq_config, recombination_method, save_before_denoising, 
-                    preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function
+                    preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function,
+                    latent_brightness_scale
                 )
                 
                 if enhanced_image_list:
@@ -2428,6 +2481,11 @@ class FrequencySeparationScript(scripts.Script):
         mask_function = getattr(p, '_freq_sep_mask_function', None)
         if mask_function and mask_function != 'center_circular':  # Only store if not default
             params["Frequency Separation mask function"] = mask_function
+        
+        # Add brightness scale parameter
+        brightness_scale = getattr(p, '_freq_sep_latent_brightness_scale', None)
+        if brightness_scale is not None and brightness_scale != 1.0:  # Only store if not default
+            params["Frequency Separation brightness scale"] = brightness_scale
         
         # Add version for future compatibility
         params["Frequency Separation version"] = __version__

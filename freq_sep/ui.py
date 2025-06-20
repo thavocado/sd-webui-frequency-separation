@@ -10,16 +10,6 @@ def ui(is_img2img):
     from modules.ui_components import InputAccordion
     
     with InputAccordion(value=False, label="🎛️ Frequency Separation Enhancement") as enabled:
-        gr.HTML("""
-        <div style="background: linear-gradient(90deg, #1e3a8a, #3b82f6); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-            <h3 style="color: white; margin: 0; text-align: center;">
-                🌊 Defeat VAE Limitations Through Frequency Domain Processing 🌊
-            </h3>
-            <p style="color: #e0e7ff; margin: 5px 0 0 0; text-align: center; font-size: 0.9em;">
-                Process structure and details separately for superior quality beyond normal VAE constraints
-            </p>
-        </div>
-        """)
             
         with gr.Row():
             sync_mode = gr.Dropdown(
@@ -32,7 +22,7 @@ def ui(is_img2img):
                     SyncMode.PROGRESSIVE.value,
                     SyncMode.SHARED_LATENT.value
                 ],
-                value=SyncMode.PROGRESSIVE.value
+                value=SyncMode.INDEPENDENT.value
             )
             
             num_bands = gr.Slider(
@@ -120,29 +110,17 @@ def ui(is_img2img):
                 value="no_mask",
                 info="Mathematical function for frequency separation masks"
             )
+            
+            latent_brightness_scale = gr.Slider(
+                label="🔆 Brightness Scale",
+                minimum=0.5,
+                maximum=2.0,
+                value=1.0,
+                step=0.05,
+                info="Scale latent brightness (mean & std) before VAE decode"
+            )
         
         with gr.Accordion("🎛️ Advanced Band Configuration", open=False):
-            gr.HTML("""
-            <div style="background: #f0f9ff; padding: 8px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #0ea5e9;">
-                <p style="margin: 0; color: #0c4a6e;">
-                    <strong>💡 Tip:</strong> Default settings work well for most images. 
-                    Adjust only if you need specific frequency emphasis.
-                </p>
-            </div>
-            <style>
-            .disabled-slider {
-                opacity: 0.5 !important;
-                pointer-events: none !important;
-            }
-            .disabled-slider input {
-                opacity: 0.5 !important;
-            }
-            .disabled-group {
-                opacity: 0.5 !important;
-                pointer-events: none !important;
-            }
-            </style>
-            """)
             
             with gr.Row():
                 use_custom_steps_cfg = gr.Checkbox(
@@ -276,6 +254,7 @@ def ui(is_img2img):
         (save_before_denoising, "Frequency Separation direct output"),
         (use_custom_steps_cfg, "Frequency Separation custom steps cfg"),
         (mask_function, "Frequency Separation mask function"),
+        (latent_brightness_scale, "Frequency Separation brightness scale"),
         
         # Hidden controls (for future use)
         (preserve_dc_component_v2, "Frequency Separation preserve DC"),
@@ -311,6 +290,7 @@ def ui(is_img2img):
     ui_components = [
         enabled, sync_mode, num_bands, overlap_factor, spatial_guidance, recombination_method,
         save_before_denoising, use_custom_steps_cfg, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function,
+        latent_brightness_scale,
         low_freq_range_start, low_freq_range_end, low_denoising, low_amplitude, low_steps, low_cfg,
         mid_freq_range_start, mid_freq_range_end, mid_denoising, mid_amplitude, mid_steps, mid_cfg,
         high_freq_range_start, high_freq_range_end, high_denoising, high_amplitude, high_steps, high_cfg
