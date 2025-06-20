@@ -8,6 +8,8 @@
 
 ---
 
+## WARNING: This extension is currently experimental and may undergo major changes
+
 ## 1. Why You’d Want This  
 **Motivation**  
 Stable Diffusion’s VAE often softens tiny textures (skin pores, fabric weave, micro-contrast).  

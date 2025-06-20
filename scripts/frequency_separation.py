@@ -28,6 +28,7 @@ from freq_sep.config import SyncMode, FrequencyBandConfig, FreqSepConfig
 # Import version
 import sys
 import os
+from modules import script_callbacks
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 try:
     from __version__ import __version__
@@ -814,14 +815,52 @@ class FrequencySeparationScript(scripts.Script):
             print(f"     🔋 Total processed latent energy: {total_processed_latent_energy:.3f}")
             print(f"     🔋 Input latent energy (reference): {input_latent_energy:.3f}")
             
+            # Apply energy normalization to preserve brightness and saturation
+            if total_processed_latent_energy > 0:
+                energy_ratio = math.sqrt(input_latent_energy / total_processed_latent_energy)
+                print(f"     ⚡ Energy correction factor: {energy_ratio:.3f}")
+                
+                # Apply energy correction to each band
+                for band_name in processed_bands:
+                    processed_bands[band_name] = processed_bands[band_name] * energy_ratio
+                    corrected_energy = torch.mean(processed_bands[band_name] ** 2).item()
+                    print(f"     ✅ {band_name} corrected energy: {corrected_energy:.3f}")
+                
+                # Verify total energy after correction
+                total_corrected_energy = sum(torch.mean(band ** 2).item() for band in processed_bands.values())
+                print(f"     🔋 Total corrected energy: {total_corrected_energy:.3f} (target: {input_latent_energy:.3f})")
+            else:
+                print(f"     ⚠️ Skipping energy normalization (total processed energy is zero)")
+            
             print(f"  🎨 Step 4: Multi-VAE decoding each frequency band separately...")
 
             decoded_bands = {}
+            band_brightnesses = {}
             for band_name, band_latent in processed_bands.items():
                 print(f"    🖼️ VAE decoding {band_name} band...")
                 decoded_band_image = self.decode_latent_to_image(band_latent, p)
                 decoded_bands[band_name] = decoded_band_image
-                print(f"      ✅ {band_name} band decoded: {decoded_band_image.size}")
+                
+                # Track brightness of each decoded band
+                band_array = np.array(decoded_band_image)
+                band_brightness = np.mean(band_array)
+                band_brightnesses[band_name] = band_brightness
+                print(f"      ✅ {band_name} band decoded: {decoded_band_image.size}, brightness: {band_brightness:.1f}")
+            
+            # Calculate target brightness (average of all bands weighted by their importance)
+            target_brightness = np.mean(list(band_brightnesses.values()))
+            print(f"    🎯 Target brightness for normalization: {target_brightness:.1f}")
+            
+            # Normalize brightness of each band to match target
+            for band_name, band_image in decoded_bands.items():
+                if band_brightnesses[band_name] > 0:
+                    brightness_ratio = target_brightness / band_brightnesses[band_name]
+                    if abs(brightness_ratio - 1.0) > 0.05:  # Only adjust if significant difference
+                        print(f"    🔆 Adjusting {band_name} brightness by factor {brightness_ratio:.3f}")
+                        band_array = np.array(band_image).astype(np.float32)
+                        band_array = band_array * brightness_ratio
+                        band_array = np.clip(band_array, 0, 255).astype(np.uint8)
+                        decoded_bands[band_name] = Image.fromarray(band_array, 'RGB')
             
             # # 5. Recombine the multiple VAE-decoded images in image space
             # print(f"  🔥 Step 5: Recombining multiple VAE renderings in image space...")
@@ -1307,16 +1346,18 @@ class FrequencySeparationScript(scripts.Script):
         mask = torch.zeros_like(freq_magnitude)
         transition_width = overlap_factor
         
-        # Smooth transitions using sigmoid
+        # Smooth transitions using sigmoid with very gentle slope
+        sigmoid_sharpness = 1.0  # Very low for smooth, gradual transitions
+        
         if low_freq == 0.0:
             # lowest band: keep everything inside
             lower_mask = torch.ones_like(freq_magnitude)
         else:
             lower_transition = (freq_magnitude - low_freq) / transition_width
-            lower_mask = torch.sigmoid(lower_transition * 10)   # ← original sign
+            lower_mask = torch.sigmoid(lower_transition * sigmoid_sharpness)
         
         upper_transition = (high_freq - freq_magnitude) / transition_width  
-        upper_mask = torch.sigmoid(upper_transition * 10)
+        upper_mask = torch.sigmoid(upper_transition * sigmoid_sharpness)
         
         mask = lower_mask * upper_mask
         
@@ -1553,6 +1594,23 @@ class FrequencySeparationScript(scripts.Script):
             print(f"      ⚙️ Running diffusion: {band_config.steps} steps, denoising {band_config.denoising_strength:.2f}, CFG {band_config.cfg_scale}, seed {band_seed}")
             print(f"      🔧 Processing object ready: scripts={band_p.scripts is not None}, script_args={len(band_p.script_args) if hasattr(band_p, 'script_args') else 'None'}")
             
+            # Create frequency mask for this band in latent space
+            latent_height, latent_width = band_latent.shape[-2:]
+            freq_mask = self.create_latent_frequency_mask(
+                (latent_height, latent_width),
+                band_config.frequency_range,
+                base_p._freq_sep_config.overlap_factor if hasattr(base_p, '_freq_sep_config') else 0.1,
+                base_p._freq_sep_mask_function if hasattr(base_p, '_freq_sep_mask_function') else 'center_circular'
+            )
+            
+            # Enable frequency clamping for this band
+            frequency_clamping_callback.set_frequency_constraint(
+                freq_mask, 
+                band_config.name,
+                use_fft_shift=getattr(base_p, '_freq_sep_use_fft_shift', False)
+            )
+            print(f"      🎯 Enabled frequency clamping for {band_config.name} band")
+            
             # Run the ACTUAL diffusion process with progress bars (ADetailer approach)!
             try:
                 print(f"      🚀 Starting processing.process_images() for {band_config.name}...")
@@ -1564,6 +1622,10 @@ class FrequencySeparationScript(scripts.Script):
                 traceback.print_exc()
                 return band_latent
             finally:
+                # Disable frequency clamping
+                frequency_clamping_callback.disable()
+                print(f"      🎯 Disabled frequency clamping")
+                
                 # Clean up (like ADetailer does)
                 if hasattr(band_p, 'close'):
                     band_p.close()
@@ -1898,16 +1960,18 @@ class FrequencySeparationScript(scripts.Script):
         # Create soft mask with smooth transitions
         transition_width = overlap_factor
         
-        # Smooth transitions using sigmoid-like function
+        # Smooth transitions using sigmoid-like function with very gentle slope
+        sigmoid_sharpness = 1.0  # Very low for smooth, gradual transitions
+        
         if low_freq == 0.0:
             # lowest band: keep everything inside
             lower_mask = np.ones_like(freq_magnitude)
         else:
             lower_transition = (freq_magnitude - low_freq) / transition_width
-            lower_mask = 1.0 / (1.0 + np.exp(-lower_transition * 10))   # ← original sign
+            lower_mask = 1.0 / (1.0 + np.exp(-lower_transition * sigmoid_sharpness))
         
         upper_transition = (high_freq - freq_magnitude) / transition_width  
-        upper_mask = 1.0 / (1.0 + np.exp(-upper_transition * 10))
+        upper_mask = 1.0 / (1.0 + np.exp(-upper_transition * sigmoid_sharpness))
         
         mask = lower_mask * upper_mask
         
@@ -1930,6 +1994,35 @@ class FrequencySeparationScript(scripts.Script):
             combined_freq = None          # complex array  (H,W,C)
             sum_mask      = None          # real array     (H,W)
             
+            # First pass: create all masks and calculate their sum
+            all_masks = {}
+            for band_name in band_arrays.keys():
+                band_config = next(cfg for cfg in freq_config.band_configs if cfg.name == band_name)
+                mask = self.create_image_frequency_mask(
+                    (height, width),
+                    band_config.frequency_range,
+                    freq_config.overlap_factor,
+                    mask_function
+                )
+                amplitude_scale = band_config.amplitude_scale
+                all_masks[band_name] = mask * amplitude_scale
+            
+            # Calculate the sum of all masks
+            total_mask = np.zeros((height, width))
+            for mask in all_masks.values():
+                total_mask += mask
+            
+            # Normalize masks so they sum to 1.0
+            print(f"      📊 Pre-normalization mask sum: min={np.min(total_mask):.3f}, max={np.max(total_mask):.3f}, mean={np.mean(total_mask):.3f}")
+            for band_name in all_masks:
+                all_masks[band_name] = np.where(total_mask > 0, all_masks[band_name] / total_mask, 0)
+            
+            # Verify normalization
+            normalized_sum = np.zeros((height, width))
+            for mask in all_masks.values():
+                normalized_sum += mask
+            print(f"      ✅ Post-normalization mask sum: min={np.min(normalized_sum):.3f}, max={np.max(normalized_sum):.3f}, mean={np.mean(normalized_sum):.3f}")
+            
             for band_name, band_array in band_arrays.items():
                 band_config = next(cfg for cfg in freq_config.band_configs if cfg.name == band_name)
                 
@@ -1946,17 +2039,12 @@ class FrequencySeparationScript(scripts.Script):
                 band_freq = np.stack([np.fft.fft2(band_array[:, :, c])
                                     for c in range(channels)], axis=-1)
 
-                # -- frequency mask ---------------------------------------------------
-                mask = self.create_image_frequency_mask(
-                    (height, width),
-                    band_config.frequency_range,
-                    freq_config.overlap_factor,
-                    mask_function
-                )                            # (H,W) real
+                # Use pre-normalized mask
+                mask = all_masks[band_name]
                 
                 # Debug: Save mask and spectrum images
                 if self.debug_mode:
-                    print(f"      🔍 {band_name} mask stats: min={np.min(mask):.3f}, max={np.max(mask):.3f}, mean={np.mean(mask):.3f}")
+                    print(f"      🔍 {band_name} normalized mask stats: min={np.min(mask):.3f}, max={np.max(mask):.3f}, mean={np.mean(mask):.3f}")
                     
                     # Save mask as image for debugging
                     mask_img = (mask * 255).astype(np.uint8)
@@ -1967,22 +2055,15 @@ class FrequencySeparationScript(scripts.Script):
                     spectrum_mag = (spectrum_mag / np.max(spectrum_mag) * 255).astype(np.uint8)
                     self._save_debug_image(spectrum_mag, f"image_{band_name}_spectrum.png", None, "IMAGE")
 
-                # ▶️ NEW: weighted accumulation & running mask sum with amplitude scaling
-                amplitude_scale = band_config.amplitude_scale
-                print(f"        🎚️ Applying amplitude scale {amplitude_scale:.2f} to {band_name}")
-                
-                # Calculate the effective mask (mask * amplitude) for proper weighting
-                effective_mask = mask * amplitude_scale
-                
-                # Calculate the actual masked and scaled frequency that will be used
-                masked_scaled_freq = band_freq * effective_mask[..., None]
+                # Use the normalized mask directly (amplitude scale already applied)
+                masked_scaled_freq = band_freq * mask[..., None]
                 
                 if combined_freq is None:
                     combined_freq = masked_scaled_freq
-                    sum_mask      = effective_mask
+                    sum_mask      = mask
                 else:
                     combined_freq += masked_scaled_freq
-                    sum_mask      += effective_mask
+                    sum_mask      += mask
                 
                 # Debug: Save masked spectrum to see what's actually being accumulated
                 if self.debug_mode:
@@ -1996,9 +2077,17 @@ class FrequencySeparationScript(scripts.Script):
                                           f"image_{band_name}_masked_spectrum.png",
                                           None, "IMAGE")
             
-            combined_freq = np.where(sum_mask[..., None] > 0,
-                                    combined_freq / sum_mask[..., None],
-                                    0)
+            # Debug: Check sum_mask statistics (should be 1.0 everywhere now)
+            print(f"      📊 Final sum_mask stats: min={np.min(sum_mask):.3f}, max={np.max(sum_mask):.3f}, mean={np.mean(sum_mask):.3f}")
+            
+            # Check how many pixels have sum_mask != 1.0
+            deviation_from_one = np.abs(sum_mask - 1.0)
+            pixels_not_one = np.sum(deviation_from_one > 0.01)
+            total_pixels = sum_mask.size
+            print(f"      ✅ Pixels where sum_mask deviates from 1.0 by >0.01: {pixels_not_one}/{total_pixels} ({pixels_not_one/total_pixels*100:.1f}%)")
+            
+            # No need to divide by sum_mask since masks are pre-normalized to sum to 1.0
+            # combined_freq already contains the properly weighted sum
 
             # Convert back to spatial domain
             final_channels = []
@@ -2301,6 +2390,72 @@ class FrequencySeparationScript(scripts.Script):
         params["Frequency Separation version"] = __version__
         
         return params
+
+# Frequency clamping callback for constraining frequencies during denoising
+class FrequencyClampingCallback:
+    def __init__(self):
+        self.enabled = False
+        self.frequency_mask = None
+        self.band_name = None
+        self.use_fft_shift = False
+        
+    def set_frequency_constraint(self, frequency_mask, band_name, use_fft_shift=False):
+        """Set the frequency mask to apply during denoising"""
+        self.enabled = True
+        self.frequency_mask = frequency_mask
+        self.band_name = band_name
+        self.use_fft_shift = use_fft_shift
+        
+    def disable(self):
+        """Disable frequency clamping"""
+        self.enabled = False
+        self.frequency_mask = None
+        self.band_name = None
+        
+    def on_cfg_denoiser(self, params):
+        """Apply frequency filtering to the denoised latent at each step"""
+        if not self.enabled or self.frequency_mask is None:
+            return
+            
+        try:
+            # Get the denoised latent
+            x = params.x
+            
+            # Convert to frequency domain
+            x_freq = torch.fft.fftn(x, dim=(-2, -1))
+            
+            # Apply FFT shift if needed
+            if self.use_fft_shift:
+                x_freq = torch.fft.fftshift(x_freq, dim=(-2, -1))
+            
+            # Apply frequency mask (broadcast across batch and channels)
+            mask_tensor = torch.tensor(self.frequency_mask, device=x.device, dtype=x.dtype)
+            mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0)  # Add batch and channel dims
+            x_freq = x_freq * mask_tensor
+            
+            # Inverse FFT shift if applied
+            if self.use_fft_shift:
+                x_freq = torch.fft.ifftshift(x_freq, dim=(-2, -1))
+            
+            # Convert back to spatial domain
+            x_filtered = torch.fft.ifftn(x_freq, dim=(-2, -1)).real
+            
+            # Update the denoised latent
+            params.x = x_filtered
+            
+            # Debug print (only on first few steps to avoid spam)
+            if params.sampling_step <= 2:
+                print(f"        🎯 Applied frequency constraint for {self.band_name} at step {params.sampling_step}")
+                
+        except Exception as e:
+            print(f"        ⚠️ Error in frequency clamping callback: {e}")
+            # Don't break the denoising process
+
+# Global instance of the callback
+frequency_clamping_callback = FrequencyClampingCallback()
+
+# Register the callback
+script_callbacks.on_cfg_denoiser(frequency_clamping_callback.on_cfg_denoiser)
 
 # Script registration - this is crucial for the script to actually work!
 if DEPENDENCIES_AVAILABLE:
