@@ -6,17 +6,20 @@
 
 ## 1. Why You’d Want This  
 **Motivation**  
-Stable Diffusion’s VAE often softens tiny textures (skin pores, fabric weave, micro-contrast).  
-This extension slices every picture into **three “layers” of detail** (structure, features, fine grain), runs each layer through its own diffusion pass, then glues them back together. 
-This does not actually work in the predictable way -- most of the image is actually encoded in the highest latent frequencies, the the lower frequencies contribute almost nothing to the final result. In fact, filtering them out can alone produce more detailed images. 
-
-**Technical detail**  
+To improve image quality:
 * We work in the Fourier domain. 
-
 * Three radial masks select normalized bands  
-* Soft sigmoids with default 10 % overlap.
-* Each band is inverse-FFT’d, diffused with custom steps/CFG, then re-FFT’d and merged.
----
+* Soft sigmoids with default 10 % overlap
+* Each band is inverse-FFT’d, diffused with custom steps/CFG, then re-FFT’d and merged
+
+This does not actually work in any predictable way -- the latent space is insanely *redundant*:
+  1. High frequencies in latent space contain most of the encoded information
+  2. Phase information (preserved) carries spatial structure
+  3. Even second-order filtering affects information distribution, not information content
+  4. The VAE decoder is robust and has strong priors
+  5. Information in latent space is redundantly encoded across frequencies
+
+This extension is therefore experimental and incomplete.
 
 ## 2. Installation  
 **Plain-English steps**  
