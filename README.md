@@ -1,10 +1,4 @@
 # 🌊 Frequency Separation Extension for WebUI
-*Unlock extra-sharp Stable Diffusion renders by processing low, mid & high frequencies separately*
-
-![Frequency Separation Comparison](preview/comp.png)
-
-## User Interface
-![UI Preview](preview/ui_v1.0.1.png)
 
 ---
 

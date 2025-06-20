@@ -560,7 +560,7 @@ class FrequencySeparationScript(scripts.Script):
     def process(self, p: StableDiffusionProcessing, enabled: bool, sync_mode: str, num_bands: int,
                overlap_factor: float, spatial_guidance: float, recombination_method: str,
                save_before_denoising: bool, use_custom_steps_cfg: bool, preserve_dc_component_v2: bool, use_fft_shift: bool, use_correct_fft_shift: bool, mask_function: str,
-               latent_brightness_scale: float,
+               latent_brightness_scale: float, enable_frequency_clamping: bool,
                low_freq_start: float, low_freq_end: float, low_denoising: float, low_amplitude: float, low_steps: int, low_cfg: float,
                mid_freq_start: float, mid_freq_end: float, mid_denoising: float, mid_amplitude: float, mid_steps: int, mid_cfg: float,
                high_freq_start: float, high_freq_end: float, high_denoising: float, high_amplitude: float, high_steps: int, high_cfg: float):
@@ -637,6 +637,7 @@ class FrequencySeparationScript(scripts.Script):
         p._freq_sep_use_correct_fft_shift = use_correct_fft_shift
         p._freq_sep_mask_function = mask_function
         p._freq_sep_latent_brightness_scale = latent_brightness_scale
+        p._freq_sep_enable_frequency_clamping = enable_frequency_clamping
         
         # Check if we're in txt2img or img2img mode
         is_txt2img = not isinstance(p, StableDiffusionProcessingImg2Img)
@@ -690,7 +691,7 @@ class FrequencySeparationScript(scripts.Script):
             print(f"   🔍 Using same approach as ADetailer for reliable processing")
             
             # Process in latent space and modify p.init_images in place
-            enhanced_images = self.process_latent_frequency_separation(p, freq_config, recombination_method, save_before_denoising, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function, latent_brightness_scale)
+            enhanced_images = self.process_latent_frequency_separation(p, freq_config, recombination_method, save_before_denoising, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function, latent_brightness_scale, enable_frequency_clamping)
             
             # CRITICAL: Replace the init_images so img2img uses our enhanced versions
             if enhanced_images:
@@ -734,7 +735,7 @@ class FrequencySeparationScript(scripts.Script):
             print("🔄 Falling back to normal processing")
             return None
     
-    def process_latent_frequency_separation(self, p: StableDiffusionProcessingImg2Img, freq_config: FreqSepConfig, recombination_method: str, save_before_denoising: bool, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", latent_brightness_scale: float = 1.0):
+    def process_latent_frequency_separation(self, p: StableDiffusionProcessingImg2Img, freq_config: FreqSepConfig, recombination_method: str, save_before_denoising: bool, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", latent_brightness_scale: float = 1.0, enable_frequency_clamping: bool = False):
         """Core latent-space frequency separation processing WITH REAL DIFFUSION"""
         
         print(f"🔧 Using recombination method: {recombination_method}")
@@ -1683,13 +1684,16 @@ class FrequencySeparationScript(scripts.Script):
                 base_p._freq_sep_mask_function if hasattr(base_p, '_freq_sep_mask_function') else 'center_circular'
             )
             
-            # Enable frequency clamping for this band
-            frequency_clamping_callback.set_frequency_constraint(
-                freq_mask, 
-                band_config.name,
-                use_fft_shift=getattr(base_p, '_freq_sep_use_fft_shift', False)
-            )
-            print(f"      🎯 Enabled frequency clamping for {band_config.name} band")
+            # Enable frequency clamping for this band if requested
+            if getattr(base_p, '_freq_sep_enable_frequency_clamping', False):
+                frequency_clamping_callback.set_frequency_constraint(
+                    freq_mask, 
+                    band_config.name,
+                    use_fft_shift=getattr(base_p, '_freq_sep_use_fft_shift', False)
+                )
+                print(f"      🎯 Enabled frequency clamping for {band_config.name} band")
+            else:
+                print(f"      ⏭️  Frequency clamping disabled for {band_config.name} band")
             
             # Inject shared noise for synchronized mode
             if sync_mode == SyncMode.SYNCHRONIZED_NOISE and shared_noise is not None:
@@ -1710,9 +1714,10 @@ class FrequencySeparationScript(scripts.Script):
                 traceback.print_exc()
                 return band_latent
             finally:
-                # Disable frequency clamping
-                frequency_clamping_callback.disable()
-                print(f"      🎯 Disabled frequency clamping")
+                # Disable frequency clamping if it was enabled
+                if getattr(base_p, '_freq_sep_enable_frequency_clamping', False):
+                    frequency_clamping_callback.disable()
+                    print(f"      🎯 Disabled frequency clamping")
                 
                 # Clean up (like ADetailer does)
                 if hasattr(band_p, 'close'):
@@ -2308,6 +2313,7 @@ class FrequencySeparationScript(scripts.Script):
             use_correct_fft_shift = getattr(p, '_freq_sep_use_correct_fft_shift', False)
             mask_function = getattr(p, '_freq_sep_mask_function', 'center_circular')
             latent_brightness_scale = getattr(p, '_freq_sep_latent_brightness_scale', 1.0)
+            enable_frequency_clamping = getattr(p, '_freq_sep_enable_frequency_clamping', False)
             
             # Convert tensor images to PIL and process each one
             enhanced_images = []
@@ -2328,7 +2334,7 @@ class FrequencySeparationScript(scripts.Script):
                 enhanced_image_list = self.process_latent_frequency_separation(
                     temp_p, freq_config, recombination_method, save_before_denoising, 
                     preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function,
-                    latent_brightness_scale
+                    latent_brightness_scale, enable_frequency_clamping
                 )
                 
                 if enhanced_image_list:
@@ -2486,6 +2492,10 @@ class FrequencySeparationScript(scripts.Script):
         brightness_scale = getattr(p, '_freq_sep_latent_brightness_scale', None)
         if brightness_scale is not None and brightness_scale != 1.0:  # Only store if not default
             params["Frequency Separation brightness scale"] = brightness_scale
+        
+        # Add frequency clamping parameter
+        if getattr(p, '_freq_sep_enable_frequency_clamping', False):
+            params["Frequency Separation frequency clamping"] = True
         
         # Add version for future compatibility
         params["Frequency Separation version"] = __version__

@@ -119,6 +119,12 @@ def ui(is_img2img):
                 step=0.05,
                 info="Scale latent brightness (mean & std) before VAE decode"
             )
+            
+            enable_frequency_clamping = gr.Checkbox(
+                label="🎯 Enable Frequency Clamping During Denoising",
+                value=False,
+                info="Constrain each band to its frequency range during denoising"
+            )
         
         with gr.Accordion("🎛️ Advanced Band Configuration", open=False):
             
@@ -255,6 +261,7 @@ def ui(is_img2img):
         (use_custom_steps_cfg, "Frequency Separation custom steps cfg"),
         (mask_function, "Frequency Separation mask function"),
         (latent_brightness_scale, "Frequency Separation brightness scale"),
+        (enable_frequency_clamping, "Frequency Separation frequency clamping"),
         
         # Hidden controls (for future use)
         (preserve_dc_component_v2, "Frequency Separation preserve DC"),
@@ -290,7 +297,7 @@ def ui(is_img2img):
     ui_components = [
         enabled, sync_mode, num_bands, overlap_factor, spatial_guidance, recombination_method,
         save_before_denoising, use_custom_steps_cfg, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function,
-        latent_brightness_scale,
+        latent_brightness_scale, enable_frequency_clamping,
         low_freq_range_start, low_freq_range_end, low_denoising, low_amplitude, low_steps, low_cfg,
         mid_freq_range_start, mid_freq_range_end, mid_denoising, mid_amplitude, mid_steps, mid_cfg,
         high_freq_range_start, high_freq_range_end, high_denoising, high_amplitude, high_steps, high_cfg
