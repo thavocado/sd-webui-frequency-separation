@@ -13,3 +13,4 @@ test_frequency_separation.py
 clear_cache.bat
 clear_cache.sh
 .claude/settings.local.json
+.claude
