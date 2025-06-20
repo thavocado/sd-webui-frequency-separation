@@ -560,7 +560,7 @@ class FrequencySeparationScript(scripts.Script):
     def process(self, p: StableDiffusionProcessing, enabled: bool, sync_mode: str, num_bands: int,
                overlap_factor: float, spatial_guidance: float, recombination_method: str,
                save_before_denoising: bool, use_custom_steps_cfg: bool, preserve_dc_component_v2: bool, use_fft_shift: bool, use_correct_fft_shift: bool, mask_function: str,
-               latent_brightness_scale: float, enable_frequency_clamping: bool, second_order_filtering: bool,
+               latent_brightness_scale: float, enable_frequency_clamping: bool, second_order_filtering: bool, spatial_denoising_mode: bool,
                low_freq_start: float, low_freq_end: float, low_denoising: float, low_amplitude: float, low_steps: int, low_cfg: float,
                mid_freq_start: float, mid_freq_end: float, mid_denoising: float, mid_amplitude: float, mid_steps: int, mid_cfg: float,
                high_freq_start: float, high_freq_end: float, high_denoising: float, high_amplitude: float, high_steps: int, high_cfg: float):
@@ -639,6 +639,7 @@ class FrequencySeparationScript(scripts.Script):
         p._freq_sep_latent_brightness_scale = latent_brightness_scale
         p._freq_sep_enable_frequency_clamping = enable_frequency_clamping
         p._freq_sep_second_order_filtering = second_order_filtering
+        p._freq_sep_spatial_denoising_mode = spatial_denoising_mode
         
         # Check if we're in txt2img or img2img mode
         is_txt2img = not isinstance(p, StableDiffusionProcessingImg2Img)
@@ -692,7 +693,7 @@ class FrequencySeparationScript(scripts.Script):
             print(f"   🔍 Using same approach as ADetailer for reliable processing")
             
             # Process in latent space and modify p.init_images in place
-            enhanced_images = self.process_latent_frequency_separation(p, freq_config, recombination_method, save_before_denoising, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function, latent_brightness_scale, enable_frequency_clamping, second_order_filtering)
+            enhanced_images = self.process_latent_frequency_separation(p, freq_config, recombination_method, save_before_denoising, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function, latent_brightness_scale, enable_frequency_clamping, second_order_filtering, spatial_denoising_mode)
             
             # CRITICAL: Replace the init_images so img2img uses our enhanced versions
             if enhanced_images:
@@ -713,15 +714,22 @@ class FrequencySeparationScript(scripts.Script):
                 extra_params = self.extra_params(p)
                 p.extra_generation_params.update(extra_params)
                 
-                # Create a Processed object with our enhanced images
-                from modules.processing import Processed
-                processed = Processed(
-                    p,
-                    images_list=enhanced_images,
-                    seed=p.seed,
-                    info=p.info if hasattr(p, 'info') else ""
-                )
-                return processed
+                # For ALL modes with save_before_denoising, set denoising strength to 0
+                # This ensures the frequency-enhanced images pass through unchanged
+                print("🎯 Setting denoising strength to 0 to preserve frequency-enhanced results")
+                # Set denoising strength to 0 so the image passes through unchanged
+                p.denoising_strength = 0.0
+                # Update init_images with our processed results
+                p.init_images = enhanced_images
+                print(f"   ✅ Set {len(enhanced_images)} frequency-enhanced images as init_images")
+                print("   ✅ Denoising strength set to 0 - images will pass through unchanged")
+                
+                if spatial_denoising_mode:
+                    print("   🎯 Mode: Spatial denoising with variable strength masks")
+                else:
+                    print("   🎯 Mode: Frequency separation enhancement")
+                
+                return None  # Let normal processing continue with denoising_strength=0
             else:
                 # Normal behavior - continue with img2img denoising
                 # Add metadata to PNG parameters for final output
@@ -736,7 +744,19 @@ class FrequencySeparationScript(scripts.Script):
             print("🔄 Falling back to normal processing")
             return None
     
-    def process_latent_frequency_separation(self, p: StableDiffusionProcessingImg2Img, freq_config: FreqSepConfig, recombination_method: str, save_before_denoising: bool, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", latent_brightness_scale: float = 1.0, enable_frequency_clamping: bool = False, second_order_filtering: bool = False):
+    def run(self, p: StableDiffusionProcessing, enabled: bool, sync_mode: str, num_bands: int,
+            overlap_factor: float, spatial_guidance: float, recombination_method: str,
+            save_before_denoising: bool, use_custom_steps_cfg: bool, preserve_dc_component_v2: bool, use_fft_shift: bool, use_correct_fft_shift: bool, mask_function: str,
+            latent_brightness_scale: float, enable_frequency_clamping: bool, second_order_filtering: bool, spatial_denoising_mode: bool,
+            low_freq_start: float, low_freq_end: float, low_denoising: float, low_amplitude: float, low_steps: int, low_cfg: float,
+            mid_freq_start: float, mid_freq_end: float, mid_denoising: float, mid_amplitude: float, mid_steps: int, mid_cfg: float,
+            high_freq_start: float, high_freq_end: float, high_denoising: float, high_amplitude: float, high_steps: int, high_cfg: float):
+        """Run method for WebUI - not used since we handle everything in process()"""
+        # We handle all processing in the process() method
+        # This run() method is kept for compatibility but returns None
+        return None
+    
+    def process_latent_frequency_separation(self, p: StableDiffusionProcessingImg2Img, freq_config: FreqSepConfig, recombination_method: str, save_before_denoising: bool, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", latent_brightness_scale: float = 1.0, enable_frequency_clamping: bool = False, second_order_filtering: bool = False, spatial_denoising_mode: bool = False):
         """Core latent-space frequency separation processing WITH REAL DIFFUSION"""
         
         print(f"🔧 Using recombination method: {recombination_method}")
@@ -748,6 +768,9 @@ class FrequencySeparationScript(scripts.Script):
         print(f"🔍 DEBUG: preserve_dc_component={preserve_dc_component}, use_fft_shift={use_fft_shift}, use_correct_fft_shift={use_correct_fft_shift}, mask_function={mask_function}")
         
         print(f"🧠 Processing {len(p.init_images)} images with REAL DIFFUSION in latent space")
+        if spatial_denoising_mode:
+            print(f"   🎯 SPATIAL DENOISING MODE: Using masks for spatially-varying denoising strength")
+            print(f"   🎭 Mask function: {mask_function}")
         print(f"   🌊 Sync Mode: {freq_config.sync_mode.value}")
         
         # Explain what each sync mode does
@@ -789,10 +812,15 @@ class FrequencySeparationScript(scripts.Script):
             print(f"     📊 Original latent stats: mean={init_mean:.3f}, std={init_std:.3f}, range=[{init_min:.3f}, {init_max:.3f}]")
             print(f"     🔋 Input latent energy: {input_latent_energy:.3f} (reference for normalization)")
             
-            # 2. Split latent into frequency bands using FFT
-            print(f"  🌊 Step 2: Splitting into frequency bands...")
-            frequency_bands = self.split_latent_frequency_bands(init_latent, freq_config, preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function, p)
-            print(f"     ✅ Split into {len(frequency_bands)} frequency bands")
+            # 2. Split latent into frequency bands OR create spatial denoising copies
+            if spatial_denoising_mode:
+                print(f"  🎯 Step 2: Creating spatial denoising bands (no frequency separation)...")
+                frequency_bands = self.create_spatial_denoising_bands(init_latent, freq_config, mask_function)
+                print(f"     ✅ Created {len(frequency_bands)} spatial denoising bands")
+            else:
+                print(f"  🌊 Step 2: Splitting into frequency bands...")
+                frequency_bands = self.split_latent_frequency_bands(init_latent, freq_config, preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function, p)
+                print(f"     ✅ Split into {len(frequency_bands)} frequency bands")
             
             # 3. Process each frequency band with ACTUAL DIFFUSION
             print(f"  🔥 Step 3: Running REAL DIFFUSION on each frequency band...")
@@ -886,6 +914,62 @@ class FrequencySeparationScript(scripts.Script):
                 final_std = torch.std(all_normalized).item()
                 print(f"     🎯 Final combined latent: mean={final_mean:.3f}, std={final_std:.3f}")
             
+            # For spatial denoising mode, blend in latent space BEFORE decoding
+            if spatial_denoising_mode:
+                print(f"  🎯 Step 4: Blending in latent space using spatial masks...")
+                
+                # Create spatial masks in latent space dimensions
+                first_latent = next(iter(processed_bands.values()))
+                latent_h, latent_w = first_latent.shape[-2:]
+                device = first_latent.device
+                dtype = first_latent.dtype
+                latent_masks = {}
+                
+                for i, band_config in enumerate(freq_config.band_configs[:len(processed_bands)]):
+                    # Create mask at latent resolution
+                    mask = self.create_latent_frequency_mask(
+                        (latent_h, latent_w),
+                        band_config.frequency_range,
+                        freq_config.overlap_factor,
+                        mask_function
+                    )
+                    # Move mask to the same device as latents
+                    mask = mask.to(device=device, dtype=dtype)
+                    latent_masks[band_config.name] = mask
+                    print(f"      🎭 Created latent mask for {band_config.name}: shape={mask.shape}, device={mask.device}")
+                
+                # Normalize masks to sum to 1.0
+                all_masks = torch.stack(list(latent_masks.values()))
+                mask_sum = torch.sum(all_masks, dim=0)
+                mask_sum = torch.clamp(mask_sum, min=1e-8)
+                
+                normalized_masks = {}
+                for band_name, mask in latent_masks.items():
+                    normalized_masks[band_name] = mask / mask_sum
+                    print(f"      ✅ Normalized {band_name} mask: mean={normalized_masks[band_name].mean():.3f}")
+                
+                # Blend latents using normalized masks
+                blended_latent = torch.zeros_like(next(iter(processed_bands.values())))
+                for band_name, band_latent in processed_bands.items():
+                    if band_name in normalized_masks:
+                        # Expand mask to match latent dimensions [B, C, H, W]
+                        mask_expanded = normalized_masks[band_name].unsqueeze(0).unsqueeze(0)
+                        blended_latent += band_latent * mask_expanded
+                        
+                        # Get denoising strength for logging
+                        denoise_strength = next(cfg.denoising_strength for cfg in freq_config.band_configs if cfg.name == band_name)
+                        print(f"      🎨 Applied {band_name} with denoising strength {denoise_strength}")
+                
+                # Decode the blended latent
+                print(f"    🖼️ VAE decoding blended latent...")
+                final_image = self.decode_latent_to_image(blended_latent, p)
+                
+                # Skip the rest of the normal processing
+                final_images.append(final_image)
+                print(f"  🎆 Image {i+1}/{len(p.init_images)} spatial denoising COMPLETE!")
+                continue  # Skip to next image
+            
+            # Normal path: Multi-VAE decode each processed band separately
             print(f"  🎨 Step 4: Multi-VAE decoding each frequency band separately...")
 
             decoded_bands = {}
@@ -925,7 +1009,7 @@ class FrequencySeparationScript(scripts.Script):
             #     band_brightness = np.mean(band_array)
             #     print(f"     💡 {band_name} band brightness: {band_brightness:.1f}")
             
-            final_image = self.recombine_decoded_frequency_bands(decoded_bands, freq_config, recombination_method, mask_function)
+            final_image = self.recombine_decoded_frequency_bands(decoded_bands, freq_config, recombination_method, mask_function, spatial_denoising_mode)
             
             # # Debug: Check final image brightness after recombination
             # final_array = np.array(final_image)
@@ -1134,6 +1218,19 @@ class FrequencySeparationScript(scripts.Script):
         latent_freq_filtered = magnitude_filtered * torch.exp(1j * phase)
         
         return latent_freq_filtered
+    
+    def create_spatial_denoising_bands(self, latent: torch.Tensor, freq_config: FreqSepConfig, mask_function: str = "center_circular") -> Dict[str, torch.Tensor]:
+        """Instead of frequency separation, create copies of the latent for different denoising strengths"""
+        print(f"  🎯 Creating spatial denoising bands (no frequency separation)")
+        
+        # Create identical copies for each band
+        spatial_bands = {}
+        for band_config in freq_config.band_configs:
+            # Each band gets the full latent - no frequency filtering
+            spatial_bands[band_config.name] = latent.clone()
+            print(f"  🎨 {band_config.name}: Ready for denoising strength {band_config.denoising_strength}")
+        
+        return spatial_bands
     
     def split_latent_frequency_bands(self, latent: torch.Tensor, freq_config: FreqSepConfig, preserve_dc_component: bool = False, use_fft_shift: float = 1.0, use_correct_fft_shift: bool = False, mask_function: str = "center_circular", p=None) -> Dict[str, torch.Tensor]:
         """Split latent tensor into frequency bands using FFT"""
@@ -1856,8 +1953,64 @@ class FrequencySeparationScript(scripts.Script):
             print(f"⚠️ Error in latent enhancement: {e}")
             return latent
     
+    def _recombine_spatial_denoising(self, decoded_bands: Dict[str, Image.Image], 
+                                    freq_config: FreqSepConfig, mask_function: str) -> Image.Image:
+        """Recombine spatially denoised bands using masks as interpolation weights"""
+        # Get image dimensions from first band
+        first_image = next(iter(decoded_bands.values()))
+        h, w = first_image.height, first_image.width
+        
+        # Create spatial masks for each band
+        masks = {}
+        for i, band_config in enumerate(freq_config.band_configs[:len(decoded_bands)]):
+            # Create mask using existing function
+            mask = self.create_image_frequency_mask(
+                (h, w),
+                band_config.frequency_range,
+                freq_config.overlap_factor,
+                mask_function
+            )
+            masks[band_config.name] = mask
+            print(f"      🎭 Created spatial mask for {band_config.name}: shape={mask.shape}, range={band_config.frequency_range}")
+        
+        # Normalize masks to sum to 1.0 at each pixel
+        all_masks = np.stack(list(masks.values()))
+        mask_sum = np.sum(all_masks, axis=0)
+        mask_sum = np.maximum(mask_sum, 1e-8)  # Avoid division by zero
+        
+        normalized_masks = {}
+        for band_name, mask in masks.items():
+            normalized_masks[band_name] = mask / mask_sum
+            mask_mean = np.mean(normalized_masks[band_name])
+            print(f"      ✅ Normalized {band_name} mask: mean={mask_mean:.3f}")
+        
+        # Convert images to numpy arrays
+        band_arrays = {}
+        for band_name, image in decoded_bands.items():
+            band_arrays[band_name] = np.array(image).astype(np.float32)
+        
+        # Weighted combination using spatial masks
+        combined = np.zeros((h, w, 3), dtype=np.float32)
+        for band_name in decoded_bands.keys():
+            if band_name in band_arrays and band_name in normalized_masks:
+                # Apply mask to each color channel
+                mask_3d = normalized_masks[band_name][:, :, np.newaxis]
+                combined += band_arrays[band_name] * mask_3d
+                
+                # Get denoising strength for this band
+                denoise_strength = next(cfg.denoising_strength for cfg in freq_config.band_configs if cfg.name == band_name)
+                print(f"      🎨 Applied {band_name} with denoising strength {denoise_strength}")
+        
+        # Convert back to PIL image
+        combined = np.clip(combined, 0, 255).astype(np.uint8)
+        result_image = Image.fromarray(combined)
+        
+        print(f"    🎉 Spatial denoising recombination complete: {result_image.size}")
+        return result_image
+    
     def recombine_decoded_frequency_bands(self, decoded_bands: Dict[str, Image.Image], 
-                                        freq_config: FreqSepConfig, recombination_method: str, mask_function: str = "center_circular") -> Image.Image:
+                                        freq_config: FreqSepConfig, recombination_method: str, mask_function: str = "center_circular", 
+                                        spatial_denoising_mode: bool = False) -> Image.Image:
         """
         Recombine frequency bands using either frequency reconstruction or simple blending.
         This defeats VAE limitations by combining details from multiple VAE interpretations!
@@ -2360,6 +2513,7 @@ class FrequencySeparationScript(scripts.Script):
             latent_brightness_scale = getattr(p, '_freq_sep_latent_brightness_scale', 1.0)
             enable_frequency_clamping = getattr(p, '_freq_sep_enable_frequency_clamping', False)
             second_order_filtering = getattr(p, '_freq_sep_second_order_filtering', False)
+            spatial_denoising_mode = getattr(p, '_freq_sep_spatial_denoising_mode', False)
             
             # Convert tensor images to PIL and process each one
             enhanced_images = []
@@ -2380,7 +2534,7 @@ class FrequencySeparationScript(scripts.Script):
                 enhanced_image_list = self.process_latent_frequency_separation(
                     temp_p, freq_config, recombination_method, save_before_denoising, 
                     preserve_dc_component, use_fft_shift, use_correct_fft_shift, mask_function,
-                    latent_brightness_scale, enable_frequency_clamping, second_order_filtering
+                    latent_brightness_scale, enable_frequency_clamping, second_order_filtering, spatial_denoising_mode
                 )
                 
                 if enhanced_image_list:
@@ -2476,6 +2630,7 @@ class FrequencySeparationScript(scripts.Script):
         
         # Copy frequency separation attributes from original
         temp_p._freq_sep_second_order_filtering = getattr(original_p, '_freq_sep_second_order_filtering', False)
+        temp_p._freq_sep_spatial_denoising_mode = getattr(original_p, '_freq_sep_spatial_denoising_mode', False)
         temp_p._freq_sep_mask_function = getattr(original_p, '_freq_sep_mask_function', 'center_circular')
         temp_p._freq_sep_use_fft_shift = getattr(original_p, '_freq_sep_use_fft_shift', False)
         temp_p._freq_sep_use_correct_fft_shift = getattr(original_p, '_freq_sep_use_correct_fft_shift', False)
@@ -2553,6 +2708,10 @@ class FrequencySeparationScript(scripts.Script):
         # Add second-order filtering parameter
         if getattr(p, '_freq_sep_second_order_filtering', False):
             params["Frequency Separation second order filtering"] = True
+        
+        # Add spatial denoising mode parameter
+        if getattr(p, '_freq_sep_spatial_denoising_mode', False):
+            params["Frequency Separation spatial denoising mode"] = True
         
         # Add version for future compatibility
         params["Frequency Separation version"] = __version__
