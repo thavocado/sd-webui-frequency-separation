@@ -21,6 +21,54 @@ This does not actually work in any predictable way -- the latent space is insane
 
 This extension is therefore experimental and incomplete.
 
+### Things that might actually work
+
+  - Feature Space Manipulation
+
+  Instead of frequency separation, work in the feature space of the U-Net:
+  ```
+  # Pseudo-code
+  features = unet.get_intermediate_features(x, t)
+  low_detail_features = features[:k]  # Earlier layers
+  high_detail_features = features[k:]  # Later layers
+  # Process separately
+  ```
+
+  - Attention Map Filtering
+
+  Use the cross-attention maps to identify and separately process different semantic regions:
+  ```
+  attention_maps = get_cross_attention_maps()
+  structure_mask = attention_maps > threshold
+  detail_mask = 1 - structure_mask
+  ```
+
+  3. Latent Space Interpolation
+
+  Instead of frequency filtering, interpolate between different denoising strengths:
+  ```
+  latent_smooth = denoise(x, strength=0.3)
+  latent_detailed = denoise(x, strength=0.8)
+  final = interpolate(latent_smooth, latent_detailed, mask)
+  ```
+
+  4. Multi-Scale VAE Decoding
+
+  Decode at different resolutions and combine:
+  ```
+  low_res = decode_vae(downsample(latent))
+  high_res = decode_vae(latent)
+  combined = low_res + high_pass_filter(high_res - upsample(low_res))
+  ```
+
+  5. Guided Latent Decomposition
+
+  Train a small network to decompose latents into semantic components:
+  ```
+  structure_latent, detail_latent = trained_decomposer(latent)
+  ```
+  Process each component separately
+
 ## 2. Installation  
 **Plain-English steps**  
 1. `git clone` this repo in your WebUI `extensions/` or in **Extensions** tab "Install from URL": `https://github.com/thavocado/sd-webui-frequency-separation`
