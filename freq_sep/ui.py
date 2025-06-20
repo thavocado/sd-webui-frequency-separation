@@ -103,6 +103,7 @@ def ui(is_img2img):
             mask_function = gr.Dropdown(
                 label="🎭 Frequency Mask Function",
                 choices=[
+                    "no_mask",
                     "center_circular",
                     "corner_min_diamond", 
                     "corner_average",
@@ -116,7 +117,7 @@ def ui(is_img2img):
                     "gravitational",
                     "wave_interference"
                 ],
-                value="minkowski_1_5",
+                value="no_mask",
                 info="Mathematical function for frequency separation masks"
             )
         

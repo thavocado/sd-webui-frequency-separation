@@ -20,11 +20,7 @@ The end result is visibly crisper and contrasty. Generated PNGs are usually **80
 * We work in the Fourier domain. 
 
 * Three radial masks select normalized bands  
-  - **Low**  0 – 0.15 f<sub>max</sub>  (preserves composition)  
-  - **Mid**  0.10 – 0.40  (edges & shapes)  
-  - **High** 0.35 – 1.0  (textures)  
-  Soft sigmoids with default 10 % overlap prevent ringing.
-
+* Soft sigmoids with default 10 % overlap.
 * Each band is inverse-FFT’d, diffused with custom steps/CFG, then re-FFT’d and merged.
 ---
 
@@ -68,7 +64,8 @@ The extension offers 12 different mathematical distance functions for creating f
 
 | Function | Description |
 | --- | --- |
-| **corner_average** ✅ | Average distance to all corners (default - recommended) |
+| no_mask | All-1 masks which retain the original look but add details |
+| corner_average | Average distance to all corners |
 | center_circular | Simple radial distance from center |
 | corner_min_diamond | Minimum distance to any corner |
 | corner_rms | Root mean square distance to corners |
@@ -88,17 +85,6 @@ The extension offers 12 different mathematical distance functions for creating f
 ## 6. Advanced Band Configuration
 
 Control each frequency band's processing independently for fine-tuned results.
-
-### Default Band Ranges
-- **Low Frequency**: 0.00 - 0.15 (Structure/Composition)
-- **Mid Frequency**: 0.10 - 0.40 (Main Features)  
-- **High Frequency**: 0.35 - 1.00 (Fine Details)
-
-### Per-Band Controls
-- **Denoising Strength**: Controls how much each frequency band is denoised during generation
-  - Low: 0.3 (default)
-  - Mid: 0.6 (default)
-  - High: 0.8 (default)
 
 - **Custom Steps & CFG** (optional): Enable "Use custom steps and CFG scale" to override global settings per band
   - Otherwise uses the main generation settings

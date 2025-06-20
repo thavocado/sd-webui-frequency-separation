@@ -832,6 +832,37 @@ class FrequencySeparationScript(scripts.Script):
             else:
                 print(f"     ⚠️ Skipping energy normalization (total processed energy is zero)")
             
+            # Normalize latents to preserve original distribution before VAE decoding
+            print(f"  🎯 Step 3.6: Normalizing latent distribution to preserve saturation...")
+            
+            # Calculate current combined statistics
+            all_processed_latents = torch.cat([band.flatten() for band in processed_bands.values()])
+            current_mean = torch.mean(all_processed_latents).item()
+            current_std = torch.std(all_processed_latents).item()
+            
+            print(f"     📊 Current combined latent: mean={current_mean:.3f}, std={current_std:.3f}")
+            print(f"     📊 Target (original) latent: mean={init_mean:.3f}, std={init_std:.3f}")
+            
+            # Apply distribution matching to preserve saturation
+            if current_std > 0:
+                for band_name in processed_bands:
+                    # Normalize to match original distribution
+                    band_latent = processed_bands[band_name]
+                    band_latent = (band_latent - current_mean) / current_std  # Standardize
+                    band_latent = band_latent * init_std + init_mean  # Match original distribution
+                    processed_bands[band_name] = band_latent
+                    
+                    # Verify the correction
+                    band_mean = torch.mean(band_latent).item()
+                    band_std = torch.std(band_latent).item()
+                    print(f"     ✅ {band_name} normalized: mean={band_mean:.3f}, std={band_std:.3f}")
+                
+                # Verify combined statistics after normalization
+                all_normalized = torch.cat([band.flatten() for band in processed_bands.values()])
+                final_mean = torch.mean(all_normalized).item()
+                final_std = torch.std(all_normalized).item()
+                print(f"     🎯 Final combined latent: mean={final_mean:.3f}, std={final_std:.3f}")
+            
             print(f"  🎨 Step 4: Multi-VAE decoding each frequency band separately...")
 
             decoded_bands = {}
@@ -1159,7 +1190,13 @@ class FrequencySeparationScript(scripts.Script):
         y, x = y.float(), x.float()
         
         # Calculate frequency magnitude based on chosen function
-        if mask_function == "center_circular":
+        if mask_function == "no_mask":
+            # No frequency masking - all frequencies pass through
+            print(f"    🚫 Using NO_MASK - all frequencies included")
+            # Create a mask that's always 1.0 everywhere
+            mask = torch.ones((h, w), dtype=torch.float32)
+            return mask
+        elif mask_function == "center_circular":
             # Simple circular distance from center (FFT shifted style)
             print(f"    🔧 Using CENTER CIRCULAR distance calculation")
             y_centered = y - center_h
@@ -1776,7 +1813,13 @@ class FrequencySeparationScript(scripts.Script):
         y, x = y.astype(np.float32), x.astype(np.float32)
         
         # Calculate frequency magnitude based on chosen function
-        if mask_function == "center_circular":
+        if mask_function == "no_mask":
+            # No frequency masking - all frequencies pass through
+            print(f"    🚫 Using NO_MASK - all frequencies included (image space)")
+            # Create a mask that's always 1.0 everywhere
+            mask = np.ones((h, w), dtype=np.float32)
+            return mask
+        elif mask_function == "center_circular":
             # Simple circular distance from center (FFT shifted style)
             print(f"    🔧 Using CENTER CIRCULAR distance calculation (image space)")
             y_centered = y - center_h
