@@ -725,7 +725,7 @@ class FrequencySeparationScript(scripts.Script):
                         "gravitational",
                         "wave_interference"
                     ],
-                    value="corner_average",
+                    value="minkowski_1_5",
                     info="Mathematical function for frequency separation masks"
                 )
             
