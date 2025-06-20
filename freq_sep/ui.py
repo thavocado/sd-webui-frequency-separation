@@ -126,6 +126,13 @@ def ui(is_img2img):
                 info="Constrain each band to its frequency range during denoising"
             )
         
+        with gr.Row():
+            second_order_filtering = gr.Checkbox(
+                label="🌀 Second-Order Frequency Filtering",
+                value=False,
+                info="Apply frequency filtering to the image representation of the spectrum itself (more effective)"
+            )
+        
         with gr.Accordion("🎛️ Advanced Band Configuration", open=False):
             
             with gr.Row():
@@ -262,6 +269,7 @@ def ui(is_img2img):
         (mask_function, "Frequency Separation mask function"),
         (latent_brightness_scale, "Frequency Separation brightness scale"),
         (enable_frequency_clamping, "Frequency Separation frequency clamping"),
+        (second_order_filtering, "Frequency Separation second order filtering"),
         
         # Hidden controls (for future use)
         (preserve_dc_component_v2, "Frequency Separation preserve DC"),
@@ -297,7 +305,7 @@ def ui(is_img2img):
     ui_components = [
         enabled, sync_mode, num_bands, overlap_factor, spatial_guidance, recombination_method,
         save_before_denoising, use_custom_steps_cfg, preserve_dc_component_v2, use_fft_shift, use_correct_fft_shift, mask_function,
-        latent_brightness_scale, enable_frequency_clamping,
+        latent_brightness_scale, enable_frequency_clamping, second_order_filtering,
         low_freq_range_start, low_freq_range_end, low_denoising, low_amplitude, low_steps, low_cfg,
         mid_freq_range_start, mid_freq_range_end, mid_denoising, mid_amplitude, mid_steps, mid_cfg,
         high_freq_range_start, high_freq_range_end, high_denoising, high_amplitude, high_steps, high_cfg
