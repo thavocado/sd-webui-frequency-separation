@@ -43,7 +43,7 @@ This extension is therefore experimental and incomplete.
   detail_mask = 1 - structure_mask
   ```
 
-  3. Latent Space Interpolation
+  - Latent Space Interpolation
 
   Instead of frequency filtering, interpolate between different denoising strengths:
   ```
@@ -52,7 +52,7 @@ This extension is therefore experimental and incomplete.
   final = interpolate(latent_smooth, latent_detailed, mask)
   ```
 
-  4. Multi-Scale VAE Decoding
+  - Multi-Scale VAE Decoding
 
   Decode at different resolutions and combine:
   ```
@@ -61,7 +61,7 @@ This extension is therefore experimental and incomplete.
   combined = low_res + high_pass_filter(high_res - upsample(low_res))
   ```
 
-  5. Guided Latent Decomposition
+  - Guided Latent Decomposition
 
   Train a small network to decompose latents into semantic components:
   ```
